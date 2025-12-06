@@ -214,10 +214,10 @@ def check_and_award_badges(user_id: int, username: str):
     if not user:
         return []
     
-    current_streak = user[2]
-    longest_streak = user[3]
-    total_points = user[5]
-    level = user[6]
+    current_streak = int(user[2])
+    longest_streak = int(user[3])
+    total_points = int(user[5])
+    level = int(user[6])
     
     # Compte le nombre de logs
     c.execute('SELECT COUNT(*) FROM learning_logs WHERE user_id = ?', (user_id,))
