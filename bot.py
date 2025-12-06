@@ -284,6 +284,85 @@ async def on_ready():
     # Génère le défi du jour
     generate_daily_challenge.start()
 
+@bot.event
+async def on_message(message):
+    """Gère les messages et conversations"""
+    if message.author == bot.user:
+        return
+    
+    print(f"📩 Message reçu de {message.author}: {message.content}")
+    
+    # Si c'est une commande, la traiter
+    if message.content.startswith('!'):
+        await bot.process_commands(message)
+        return
+    
+    # Sinon, conversation naturelle
+    content_lower = message.content.lower()
+    
+    # Salutations
+    if any(word in content_lower for word in ['bonjour', 'salut', 'hello', 'hey', 'coucou', 'bonsoir']):
+        await message.channel.send(f"👋 Salut {message.author.mention} ! Je suis le Learning Streak Builder, ton compagnon d'apprentissage ! Comment puis-je t'aider aujourd'hui ? 📚\n\n💡 Tape `!start` pour commencer ou `!help` pour voir toutes les commandes !")
+        return
+    
+    # Questions sur le bot
+    if any(word in content_lower for word in ['qui es-tu', 'qui es tu', 'what are you', 'c\'est quoi', "c'est quoi"]):
+        await message.channel.send(f"🤖 Je suis un bot qui t'aide à rester régulier dans ton apprentissage ! Je te permets de :\n\n🔥 Suivre tes **streaks** quotidiens\n🎯 Gagner des **points** et des **badges**\n📊 Visualiser tes **statistiques**\n💡 Recevoir des **suggestions** et **défis**\n\nTape `!start` pour commencer ton aventure ! 🚀")
+        return
+    
+    # Aide
+    if any(word in content_lower for word in ['aide', 'help', 'comment', 'commandes']):
+        await message.channel.send(f"📖 **Commandes principales :**\n\n`!start` - S'inscrire\n`!log <sujet> <minutes> <description>` - Logger une session\n`!stats` - Voir tes stats\n`!challenge` - Défi du jour\n`!badges` - Tes badges\n`!suggest` - Suggestion d'apprentissage\n`!leaderboard` - Classement\n\n💬 Tu peux aussi me parler normalement ! 😊")
+        return
+    
+    # Motivation
+    if any(word in content_lower for word in ['motivé', 'motivation', 'encouragement', 'fatigue', 'fatigué']):
+        motivations = [
+            "💪 Chaque petit pas compte ! Continue comme ça !",
+            "🌟 Tu es sur la bonne voie ! L'apprentissage est un marathon, pas un sprint !",
+            "🔥 Ne lâche rien ! Tes efforts d'aujourd'hui sont les succès de demain !",
+            "⚡ Tu as déjà fait le plus dur : commencer ! Continue !",
+            "🎯 Chaque jour d'apprentissage te rapproche de tes objectifs !"
+        ]
+        await message.channel.send(random.choice(motivations))
+        return
+    
+    # Merci
+    if any(word in content_lower for word in ['merci', 'thanks', 'thank you', 'cool', 'super', 'génial']):
+        await message.channel.send(f"😊 Avec plaisir {message.author.mention} ! Continue à apprendre et à grandir ! 🚀")
+        return
+    
+    # Questions sur l'apprentissage
+    if any(word in content_lower for word in ['apprendre', 'étudier', 'learn', 'study']):
+        await message.channel.send(f"📚 L'apprentissage est un voyage passionnant ! Voici ce que je peux faire pour toi :\n\n✅ Tape `!challenge` pour un défi quotidien\n✅ Tape `!suggest` pour une suggestion personnalisée\n✅ Tape `!log <sujet> <durée> <description>` pour enregistrer ta session\n\nQu'est-ce qui t'intéresse d'apprendre aujourd'hui ? 🤔")
+        return
+    
+    # Streak
+    if any(word in content_lower for word in ['streak', 'série', 'consécutif']):
+        user = get_user(message.author.id)
+        if user:
+            await message.channel.send(f"🔥 Ton streak actuel : **{user[2]} jour(s)** !\n🏆 Ton record : **{user[3]} jour(s)** !\n\nContinue comme ça ! Tape `!stats` pour plus de détails 📊")
+        else:
+            await message.channel.send(f"Tu n'es pas encore inscrit ! Tape `!start` pour commencer ton aventure d'apprentissage ! 🚀")
+        return
+    
+    # Au revoir
+    if any(word in content_lower for word in ['au revoir', 'bye', 'salut', 'à plus', 'a plus', 'ciao']):
+        await message.channel.send(f"👋 À bientôt {message.author.mention} ! N'oublie pas de revenir pour maintenir ton streak ! 🔥")
+        return
+    
+    # Réponse générale
+    responses = [
+        f"🤔 Intéressant ! Tu veux en savoir plus ? Tape `!help` pour voir ce que je peux faire !",
+        f"💡 Je suis là pour t'aider dans ton apprentissage ! Tape `!challenge` pour un défi du jour !",
+        f"📚 Prêt à apprendre quelque chose de nouveau ? Tape `!suggest` pour une suggestion !",
+        f"😊 Je suis ton assistant d'apprentissage ! Tape `!start` si tu n'es pas encore inscrit, ou `!help` pour voir les commandes !"
+    ]
+    await message.channel.send(random.choice(responses))
+    
+    # Traite quand même les commandes au cas où
+    await bot.process_commands(message)
+
 @bot.command(name='start')
 async def start(ctx):
     """Commande pour s'inscrire au Learning Streak Builder"""
