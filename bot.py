@@ -297,8 +297,15 @@ async def on_message(message):
         await bot.process_commands(message)
         return
     
-    # Sinon, conversation naturelle
-    content_lower = message.content.lower()
+    # Vérifie si le bot est mentionné
+    bot_mentioned = bot.user in message.mentions
+    
+    # Si le bot n'est pas mentionné, ignorer
+    if not bot_mentioned:
+        return
+    
+    # Sinon, conversation naturelle (en retirant la mention du texte)
+    content_lower = message.content.replace(f'<@{bot.user.id}>', '').replace(f'<@!{bot.user.id}>', '').strip().lower()
     
     # Salutations
     if any(word in content_lower for word in ['bonjour', 'salut', 'hello', 'hey', 'coucou', 'bonsoir']):
