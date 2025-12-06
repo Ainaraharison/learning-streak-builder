@@ -216,8 +216,8 @@ def check_and_award_badges(user_id: int, username: str):
     
     current_streak = int(user[2])
     longest_streak = int(user[3])
-    total_points = int(user[5])
-    level = int(user[6])
+    total_points = int(user[4])
+    level = int(user[5])
     
     # Compte le nombre de logs
     c.execute('SELECT COUNT(*) FROM learning_logs WHERE user_id = ?', (user_id,))
@@ -420,7 +420,7 @@ async def log_session(ctx, subject: str, duration: int, *, description: str = ""
     conn = sqlite3.connect('learning_streak.db')
     c = conn.cursor()
     
-    new_total = user[5] + points
+    new_total = user[4] + points
     new_level = calculate_level(new_total)
     
     c.execute('''UPDATE users SET total_points = ?, level = ? WHERE user_id = ?''',
@@ -498,8 +498,8 @@ async def show_stats(ctx, member: Optional[discord.Member] = None):
     
     embed.add_field(name="🔥 Streak actuel", value=f"{user[2]} jour(s)", inline=True)
     embed.add_field(name="🏆 Meilleur streak", value=f"{user[3]} jour(s)", inline=True)
-    embed.add_field(name="📊 Niveau", value=f"{user[6]}", inline=True)
-    embed.add_field(name="💰 Total points", value=f"{user[5]}", inline=True)
+    embed.add_field(name="📊 Niveau", value=f"{user[5]}", inline=True)
+    embed.add_field(name="💰 Total points", value=f"{user[4]}", inline=True)
     embed.add_field(name="📚 Sessions totales", value=f"{total_logs}", inline=True)
     embed.add_field(name="🏅 Badges", value=f"{badge_count}/{len(BADGES)}", inline=True)
     embed.add_field(name="⏱️ Temps total", value=f"{total_minutes} min ({total_minutes//60}h{total_minutes%60})", inline=True)
