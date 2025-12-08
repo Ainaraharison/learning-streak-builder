@@ -572,7 +572,7 @@ async def show_badges(ctx):
 
 @bot.command(name='challenge')
 async def daily_challenge(ctx):
-    """Affiche le défi du jour"""
+    """Affiche le défi du jour généré par IA"""
     conn = sqlite3.connect('learning_streak.db')
     c = conn.cursor()
     
@@ -582,18 +582,125 @@ async def daily_challenge(ctx):
     conn.close()
     
     if not challenge:
-        # Génère un nouveau défi si aucun n'existe
-        category = random.choice(list(CHALLENGE_CATEGORIES.keys()))
-        challenge_text = random.choice(CHALLENGE_CATEGORIES[category])
-        
-        conn = sqlite3.connect('learning_streak.db')
-        c = conn.cursor()
-        c.execute('INSERT INTO daily_challenges (challenge_text, category, date) VALUES (?, ?, ?)',
-                  (challenge_text, category, today))
-        conn.commit()
-        conn.close()
+        # Génère un nouveau défi avec l'IA
+        async with ctx.channel.typing():
+            try:
+                # Récupère les infos de l'utilisateur pour personnaliser
+                user = get_user(ctx.author.id)
+                user_context = ""
+                user_stats = ""
+                
+                if user:
+                    # Récupère les statistiques de l'utilisateur
+                    streak = user[2]
+                    level = user[5]
+                    user_stats = f"\nNiveau de l'utilisateur : {level}, Streak actuel : {streak} jours"
+                    
+                    if user[8]:  # Si l'utilisateur a des intérêts
+                        try:
+                            interests = json.loads(user[8])
+                            if interests:
+                                user_context = f"\nCentres d'intérêt : {', '.join(interests)}"
+                        except:
+                            pass
+                
+                category = random.choice(list(CHALLENGE_CATEGORIES.keys()))
+                
+                prompt = f"""Crée un défi d'apprentissage unique, original et motivant pour la catégorie : {category}
+
+IMPORTANT : Ne propose PAS de défis génériques ou trop vus. Sois créatif et original !
+{user_context}{user_stats}
+
+Le défi doit :
+- Être complètement nouveau et créatif (évite les sujets trop classiques)
+- Être réalisable en 15-30 minutes
+- Être concret, actionnable et précis
+- Susciter la curiosité et l'envie d'explorer
+- Inclure un aspect pratique ou interactif si possible
+- Être adapté au niveau de l'utilisateur
+
+Exemples de ce qu'on VEUT (originalité) :
+- "Découvre comment les algorithmes de compression permettent aux images de tenir sur ton téléphone"
+- "Explore pourquoi les chats ont été vénérés dans l'Égypte ancienne et leur impact culturel"
+- "Apprends les 5 biais cognitifs qui influencent tes décisions quotidiennes"
+
+Exemples de ce qu'on NE VEUT PAS (trop générique) :
+- "Apprends un langage de programmation"
+- "Découvre l'histoire ancienne"
+- "Étudie la philosophie"
+
+Réponds UNIQUEMENT avec :
+Ligne 1 : Le défi (une phrase claire, précise et engageante)
+Ligne 2 : (vide)
+Ligne 3+ : Une explication captivante (2-4 phrases) expliquant pourquoi c'est fascinant et comment commencer
+
+Format:
+[Défi précis et original]
+
+[Explication captivante avec des détails intéressants]"""
+
+                response = groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": "Tu es un expert en pédagogie créative qui invente des défis d'apprentissage originaux, fascinants et peu conventionnels. Tu évites les sujets génériques et préfères les angles inattendus et captivants."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=1.0,
+                    max_tokens=450
+                )
+                
+                ai_response = response.choices[0].message.content.strip()
+                
+                # Sépare le défi et l'explication
+                if '\n\n' in ai_response:
+                    parts = ai_response.split('\n\n', 1)
+                    challenge_text = parts[0]
+                    explanation = parts[1] if len(parts) > 1 else ""
+                elif '\n' in ai_response:
+                    parts = ai_response.split('\n', 1)
+                    challenge_text = parts[0]
+                    explanation = parts[1] if len(parts) > 1 else ""
+                else:
+                    challenge_text = ai_response
+                    explanation = ""
+                
+                # Sauvegarde dans la base de données
+                conn = sqlite3.connect('learning_streak.db')
+                c = conn.cursor()
+                full_challenge = f"{challenge_text}\n\n{explanation}" if explanation else challenge_text
+                c.execute('INSERT INTO daily_challenges (challenge_text, category, date) VALUES (?, ?, ?)',
+                          (full_challenge, category, today))
+                conn.commit()
+                conn.close()
+                
+            except Exception as e:
+                print(f"Erreur lors de la génération du défi: {e}")
+                # Fallback sur l'ancien système
+                challenge_text = random.choice(CHALLENGE_CATEGORIES[category])
+                explanation = ""
+                
+                conn = sqlite3.connect('learning_streak.db')
+                c = conn.cursor()
+                c.execute('INSERT INTO daily_challenges (challenge_text, category, date) VALUES (?, ?, ?)',
+                          (challenge_text, category, today))
+                conn.commit()
+                conn.close()
     else:
-        challenge_text, category = challenge
+        full_text = challenge[0]
+        category = challenge[1]
+        
+        # Sépare le défi et l'explication si possible
+        if '\n\n' in full_text:
+            parts = full_text.split('\n\n', 1)
+            challenge_text = parts[0]
+            explanation = parts[1]
+        elif '\n' in full_text:
+            parts = full_text.split('\n', 1)
+            challenge_text = parts[0]
+            explanation = parts[1]
+        else:
+            challenge_text = full_text
+            explanation = ""
     
     embed = discord.Embed(
         title="🎯 Défi du Jour",
@@ -601,6 +708,10 @@ async def daily_challenge(ctx):
         color=discord.Color.purple()
     )
     embed.add_field(name="Catégorie", value=f"📖 {category.capitalize()}", inline=False)
+    
+    if explanation:
+        embed.add_field(name="💡 Pourquoi ce défi?", value=explanation, inline=False)
+    
     embed.add_field(name="Comment participer?", value="Explore ce sujet et logue ta session avec `!log`", inline=False)
     
     await ctx.send(embed=embed)
