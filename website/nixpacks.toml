@@ -1,0 +1,11 @@
+[nixpacks]
+providers = ["python"]
+
+[phases.setup]
+nixPkgs = ["python311"]
+
+[phases.install]
+cmds = ["echo 'No dependencies to install'"]
+
+[start]
+cmd = "python server.py"
