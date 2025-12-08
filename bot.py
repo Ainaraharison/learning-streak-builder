@@ -663,7 +663,7 @@ async def set_interests(ctx, *, interests: str):
 
 @bot.command(name='suggest')
 async def suggest_topic(ctx):
-    """Suggère un sujet d'apprentissage basé sur les intérêts"""
+    """Suggère un sujet d'apprentissage personnalisé avec l'IA"""
     user = get_user(ctx.author.id)
     
     if not user:
@@ -676,26 +676,83 @@ async def suggest_topic(ctx):
         await ctx.send("❌ Définis d'abord tes intérêts avec `!interests <sujets>`")
         return
     
-    # Sélectionne une catégorie basée sur les intérêts ou aléatoirement
-    categories = list(CHALLENGE_CATEGORIES.keys())
-    matching_categories = [cat for cat in categories if any(interest.lower() in cat for interest in interests)]
+    # Récupère l'historique récent d'apprentissage
+    conn = sqlite3.connect('learning_streak.db')
+    c = conn.cursor()
+    c.execute('''SELECT subject FROM learning_logs 
+                 WHERE user_id = ? ORDER BY log_date DESC LIMIT 5''', (ctx.author.id,))
+    recent_subjects = [row[0] for row in c.fetchall()]
+    conn.close()
     
-    if matching_categories:
-        category = random.choice(matching_categories)
-    else:
-        category = random.choice(categories)
-    
-    suggestion = random.choice(CHALLENGE_CATEGORIES[category])
-    
-    embed = discord.Embed(
-        title="💡 Suggestion d'Apprentissage",
-        description=suggestion,
-        color=discord.Color.blue()
-    )
-    embed.add_field(name="Catégorie", value=f"📖 {category.capitalize()}", inline=False)
-    embed.add_field(name="Tes intérêts", value=", ".join(interests), inline=False)
-    
-    await ctx.send(embed=embed)
+    # Montre que le bot réfléchit
+    async with ctx.typing():
+        try:
+            # Génère une suggestion personnalisée avec l'IA
+            prompt = f"""Suggère un sujet d'apprentissage précis et concret pour quelqu'un qui s'intéresse à : {', '.join(interests)}.
+
+Contexte de l'utilisateur :
+- Niveau : {user[5]}
+- Streak : {user[2]} jours
+- Sujets récemment étudiés : {', '.join(recent_subjects) if recent_subjects else 'Aucun'}
+
+Donne UNE suggestion d'apprentissage :
+1. Un sujet précis et actionnable (pas générique)
+2. Adapté à son niveau actuel
+3. Différent de ce qu'il a récemment étudié
+4. Avec une courte explication (1-2 phrases) de pourquoi c'est intéressant
+5. Un conseil pratique pour commencer
+
+Format : 
+Sujet : [titre précis]
+Pourquoi : [explication courte]
+Comment commencer : [conseil pratique]"""
+
+            response = groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": "Tu es un conseiller d'apprentissage expert qui donne des suggestions précises et personnalisées."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.8,
+                max_tokens=400
+            )
+            
+            ai_suggestion = response.choices[0].message.content
+            
+            embed = discord.Embed(
+                title="💡 Suggestion Personnalisée IA",
+                description=ai_suggestion,
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="🎯 Tes intérêts", value=", ".join(interests), inline=False)
+            if recent_subjects:
+                embed.add_field(name="📚 Sujets récents", value=", ".join(recent_subjects[:3]), inline=False)
+            embed.set_footer(text="💪 Prêt à apprendre ? Utilise !log pour enregistrer ta session !")
+            
+            await ctx.send(embed=embed)
+            
+        except Exception as e:
+            print(f"Erreur IA suggestion: {e}")
+            # Fallback sur l'ancien système si l'IA échoue
+            categories = list(CHALLENGE_CATEGORIES.keys())
+            matching_categories = [cat for cat in categories if any(interest.lower() in cat for interest in interests)]
+            
+            if matching_categories:
+                category = random.choice(matching_categories)
+            else:
+                category = random.choice(categories)
+            
+            suggestion = random.choice(CHALLENGE_CATEGORIES[category])
+            
+            embed = discord.Embed(
+                title="💡 Suggestion d'Apprentissage",
+                description=suggestion,
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="Catégorie", value=f"📖 {category.capitalize()}", inline=False)
+            embed.add_field(name="Tes intérêts", value=", ".join(interests), inline=False)
+            
+            await ctx.send(embed=embed)
 
 @bot.command(name='history')
 async def show_history(ctx, limit: int = 5):
