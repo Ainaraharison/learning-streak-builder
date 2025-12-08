@@ -13,9 +13,13 @@ import random
 import os
 from typing import Optional
 from dotenv import load_dotenv
+from groq import Groq
 
 # Charge les variables d'environnement depuis le fichier .env
 load_dotenv()
+
+# Initialise Groq
+groq_client = Groq(api_key=os.getenv('GROQ_API_KEY'))
 
 # Configuration
 intents = discord.Intents.default()
@@ -284,6 +288,62 @@ async def on_ready():
     # Génère le défi du jour
     generate_daily_challenge.start()
 
+async def get_ai_response(user_message: str, user_id: int) -> str:
+    """Obtient une réponse IA via Groq"""
+    try:
+        # Récupère les infos de l'utilisateur pour personnaliser la réponse
+        user = get_user(user_id)
+        user_context = ""
+        if user:
+            user_context = f"""
+Informations de l'utilisateur :
+- Streak actuel : {user[2]} jours
+- Meilleur streak : {user[3]} jours
+- Points : {user[4]}
+- Niveau : {user[5]}
+"""
+        
+        system_prompt = f"""Tu es Learning Streak Builder, un assistant d'apprentissage motivant et sympathique sur Discord. 
+
+Ton rôle :
+- Aider les utilisateurs à rester réguliers dans leur apprentissage
+- Les motiver et encourager
+- Répondre à leurs questions sur l'apprentissage
+- Leur rappeler les commandes disponibles quand c'est pertinent
+
+Commandes disponibles :
+- !start - S'inscrire
+- !log <sujet> <minutes> <description> - Logger une session
+- !stats - Voir les statistiques
+- !challenge - Défi du jour
+- !badges - Voir les badges
+- !suggest - Suggestion personnalisée
+- !interests - Définir ses centres d'intérêt
+- !leaderboard - Classement
+
+{user_context}
+
+Réponds de façon naturelle, amicale et motivante. Utilise des emojis appropriés. 
+Si la question concerne les fonctionnalités du bot, mentionne les commandes pertinentes.
+Garde tes réponses concises (2-3 phrases maximum) sauf si on te demande des détails."""
+
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ],
+            temperature=0.7,
+            max_tokens=300
+        )
+        
+        return response.choices[0].message.content
+    
+    except Exception as e:
+        print(f"Erreur Groq: {e}")
+        # Réponse de secours si l'API échoue
+        return "😊 Je suis là pour t'aider dans ton apprentissage ! Tape `!help` pour voir toutes mes commandes ou pose-moi une question ! 📚"
+
 @bot.event
 async def on_message(message):
     """Gère les messages et conversations"""
@@ -304,68 +364,19 @@ async def on_message(message):
     if not bot_mentioned:
         return
     
-    # Sinon, conversation naturelle (en retirant la mention du texte)
-    content_lower = message.content.replace(f'<@{bot.user.id}>', '').replace(f'<@!{bot.user.id}>', '').strip().lower()
+    # Retire la mention du texte
+    user_message = message.content.replace(f'<@{bot.user.id}>', '').replace(f'<@!{bot.user.id}>', '').strip()
     
-    # Salutations
-    if any(word in content_lower for word in ['bonjour', 'salut', 'hello', 'hey', 'coucou', 'bonsoir']):
-        await message.channel.send(f"👋 Salut {message.author.mention} ! Je suis le Learning Streak Builder, ton compagnon d'apprentissage ! Comment puis-je t'aider aujourd'hui ? 📚\n\n💡 Tape `!start` pour commencer ou `!help` pour voir toutes les commandes !")
+    # Si le message est vide après avoir retiré la mention
+    if not user_message:
+        await message.channel.send(f"👋 Salut {message.author.mention} ! Comment puis-je t'aider ? 😊")
         return
     
-    # Questions sur le bot
-    if any(word in content_lower for word in ['qui es-tu', 'qui es tu', 'what are you', 'c\'est quoi', "c'est quoi"]):
-        await message.channel.send(f"🤖 Je suis un bot qui t'aide à rester régulier dans ton apprentissage ! Je te permets de :\n\n🔥 Suivre tes **streaks** quotidiens\n🎯 Gagner des **points** et des **badges**\n📊 Visualiser tes **statistiques**\n💡 Recevoir des **suggestions** et **défis**\n\nTape `!start` pour commencer ton aventure ! 🚀")
-        return
-    
-    # Aide
-    if any(word in content_lower for word in ['aide', 'help', 'comment', 'commandes']):
-        await message.channel.send(f"📖 **Commandes principales :**\n\n`!start` - S'inscrire\n`!log <sujet> <minutes> <description>` - Logger une session\n`!stats` - Voir tes stats\n`!challenge` - Défi du jour\n`!badges` - Tes badges\n`!suggest` - Suggestion d'apprentissage\n`!leaderboard` - Classement\n\n💬 Tu peux aussi me parler normalement ! 😊")
-        return
-    
-    # Motivation
-    if any(word in content_lower for word in ['motivé', 'motivation', 'encouragement', 'fatigue', 'fatigué']):
-        motivations = [
-            "💪 Chaque petit pas compte ! Continue comme ça !",
-            "🌟 Tu es sur la bonne voie ! L'apprentissage est un marathon, pas un sprint !",
-            "🔥 Ne lâche rien ! Tes efforts d'aujourd'hui sont les succès de demain !",
-            "⚡ Tu as déjà fait le plus dur : commencer ! Continue !",
-            "🎯 Chaque jour d'apprentissage te rapproche de tes objectifs !"
-        ]
-        await message.channel.send(random.choice(motivations))
-        return
-    
-    # Merci
-    if any(word in content_lower for word in ['merci', 'thanks', 'thank you', 'cool', 'super', 'génial']):
-        await message.channel.send(f"😊 Avec plaisir {message.author.mention} ! Continue à apprendre et à grandir ! 🚀")
-        return
-    
-    # Questions sur l'apprentissage
-    if any(word in content_lower for word in ['apprendre', 'étudier', 'learn', 'study']):
-        await message.channel.send(f"📚 L'apprentissage est un voyage passionnant ! Voici ce que je peux faire pour toi :\n\n✅ Tape `!challenge` pour un défi quotidien\n✅ Tape `!suggest` pour une suggestion personnalisée\n✅ Tape `!log <sujet> <durée> <description>` pour enregistrer ta session\n\nQu'est-ce qui t'intéresse d'apprendre aujourd'hui ? 🤔")
-        return
-    
-    # Streak
-    if any(word in content_lower for word in ['streak', 'série', 'consécutif']):
-        user = get_user(message.author.id)
-        if user:
-            await message.channel.send(f"🔥 Ton streak actuel : **{user[2]} jour(s)** !\n🏆 Ton record : **{user[3]} jour(s)** !\n\nContinue comme ça ! Tape `!stats` pour plus de détails 📊")
-        else:
-            await message.channel.send(f"Tu n'es pas encore inscrit ! Tape `!start` pour commencer ton aventure d'apprentissage ! 🚀")
-        return
-    
-    # Au revoir
-    if any(word in content_lower for word in ['au revoir', 'bye', 'salut', 'à plus', 'a plus', 'ciao']):
-        await message.channel.send(f"👋 À bientôt {message.author.mention} ! N'oublie pas de revenir pour maintenir ton streak ! 🔥")
-        return
-    
-    # Réponse générale
-    responses = [
-        f"🤔 Intéressant ! Tu veux en savoir plus ? Tape `!help` pour voir ce que je peux faire !",
-        f"💡 Je suis là pour t'aider dans ton apprentissage ! Tape `!challenge` pour un défi du jour !",
-        f"📚 Prêt à apprendre quelque chose de nouveau ? Tape `!suggest` pour une suggestion !",
-        f"😊 Je suis ton assistant d'apprentissage ! Tape `!start` si tu n'es pas encore inscrit, ou `!help` pour voir les commandes !"
-    ]
-    await message.channel.send(random.choice(responses))
+    # Montre que le bot est en train de taper
+    async with message.channel.typing():
+        # Obtient la réponse de l'IA
+        ai_response = await get_ai_response(user_message, message.author.id)
+        await message.channel.send(f"{message.author.mention} {ai_response}")
     
     # Traite quand même les commandes au cas où
     await bot.process_commands(message)
