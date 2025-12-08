@@ -5,7 +5,6 @@ Un bot pour suivre et gamifier votre apprentissage quotidien
 
 import discord
 from discord.ext import commands, tasks
-import sqlite3
 import json
 from datetime import datetime, timedelta
 import asyncio
@@ -28,15 +27,35 @@ intents.message_content = True  # Nécessaire pour lire les commandes
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+# Import PostgreSQL
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
+# Configuration de la base de données PostgreSQL
+DATABASE_URL = os.getenv('DATABASE_URL')
+
+if not DATABASE_URL:
+    print("❌ DATABASE_URL non définie!")
+    print("Ajoute DATABASE_URL dans ton fichier .env")
+    print("Exemple: DATABASE_URL=postgresql://user:password@localhost:5432/learning_streak")
+    exit(1)
+
+print("🐘 Utilisation de PostgreSQL")
+
+# Connexion à la base de données
+def get_db_connection():
+    """Crée une connexion à PostgreSQL"""
+    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+
 # Connexion à la base de données
 def init_db():
-    """Initialise la base de données SQLite"""
-    conn = sqlite3.connect('learning_streak.db')
+    """Initialise la base de données PostgreSQL"""
+    conn = get_db_connection()
     c = conn.cursor()
     
-    # Table des utilisateurs
+    # Tables PostgreSQL
     c.execute('''CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
+        user_id BIGINT PRIMARY KEY,
         username TEXT,
         current_streak INTEGER DEFAULT 0,
         longest_streak INTEGER DEFAULT 0,
@@ -47,10 +66,9 @@ def init_db():
         interests TEXT
     )''')
     
-    # Table des logs d'apprentissage
     c.execute('''CREATE TABLE IF NOT EXISTS learning_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
+        id SERIAL PRIMARY KEY,
+        user_id BIGINT,
         subject TEXT,
         description TEXT,
         duration INTEGER,
@@ -59,19 +77,17 @@ def init_db():
         FOREIGN KEY (user_id) REFERENCES users (user_id)
     )''')
     
-    # Table des badges
     c.execute('''CREATE TABLE IF NOT EXISTS badges (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
+        id SERIAL PRIMARY KEY,
+        user_id BIGINT,
         badge_name TEXT,
         badge_description TEXT,
         earned_date TEXT,
         FOREIGN KEY (user_id) REFERENCES users (user_id)
     )''')
     
-    # Table des défis du jour
     c.execute('''CREATE TABLE IF NOT EXISTS daily_challenges (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         challenge_text TEXT,
         category TEXT,
         date TEXT
@@ -140,30 +156,34 @@ CHALLENGE_CATEGORIES = {
 
 def get_user(user_id: int):
     """Récupère les infos d'un utilisateur"""
-    conn = sqlite3.connect('learning_streak.db')
+    conn = get_db_connection()
     c = conn.cursor()
-    c.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
+    c.execute('SELECT * FROM users WHERE user_id = %s', (user_id,))
     user = c.fetchone()
     conn.close()
-    return user
+    if user:
+        return tuple(user.values())
+    return None
 
 def create_user(user_id: int, username: str):
     """Crée un nouvel utilisateur"""
-    conn = sqlite3.connect('learning_streak.db')
+    conn = get_db_connection()
     c = conn.cursor()
     now = datetime.now().isoformat()
     c.execute('''INSERT INTO users (user_id, username, created_at, interests) 
-                 VALUES (?, ?, ?, ?)''', (user_id, username, now, '[]'))
+                 VALUES (%s, %s, %s, %s)''', 
+              (user_id, username, now, '[]'))
     conn.commit()
     conn.close()
 
 def update_streak(user_id: int):
     """Met à jour le streak de l'utilisateur"""
-    conn = sqlite3.connect('learning_streak.db')
+    conn = get_db_connection()
     c = conn.cursor()
     
     user = get_user(user_id)
     if not user:
+        conn.close()
         return 0
     
     current_streak = user[2]
@@ -191,8 +211,8 @@ def update_streak(user_id: int):
     # Mise à jour du longest streak
     new_longest = max(longest_streak, new_streak)
     
-    c.execute('''UPDATE users SET current_streak = ?, longest_streak = ?, last_log_date = ? 
-                 WHERE user_id = ?''', (new_streak, new_longest, today.isoformat(), user_id))
+    c.execute('''UPDATE users SET current_streak = %s, longest_streak = %s, last_log_date = %s 
+                 WHERE user_id = %s''', (new_streak, new_longest, today.isoformat(), user_id))
     conn.commit()
     conn.close()
     
@@ -211,11 +231,12 @@ def calculate_level(total_points: int) -> int:
 
 def check_and_award_badges(user_id: int, username: str):
     """Vérifie et attribue les badges"""
-    conn = sqlite3.connect('learning_streak.db')
+    conn = get_db_connection()
     c = conn.cursor()
     
     user = get_user(user_id)
     if not user:
+        conn.close()
         return []
     
     current_streak = int(user[2])
@@ -224,16 +245,18 @@ def check_and_award_badges(user_id: int, username: str):
     level = int(user[5])
     
     # Compte le nombre de logs
-    c.execute('SELECT COUNT(*) FROM learning_logs WHERE user_id = ?', (user_id,))
-    total_logs = c.fetchone()[0]
+    c.execute('SELECT COUNT(*) FROM learning_logs WHERE user_id = %s', (user_id,))
+    result = c.fetchone()
+    total_logs = result['count'] if result else 0
     
     # Compte les sujets uniques
-    c.execute('SELECT COUNT(DISTINCT subject) FROM learning_logs WHERE user_id = ?', (user_id,))
-    unique_subjects = c.fetchone()[0]
+    c.execute('SELECT COUNT(DISTINCT subject) FROM learning_logs WHERE user_id = %s', (user_id,))
+    result = c.fetchone()
+    unique_subjects = result['count'] if result else 0
     
     # Vérifie quels badges l'utilisateur a déjà
-    c.execute('SELECT badge_name FROM badges WHERE user_id = ?', (user_id,))
-    earned_badges = [row[0] for row in c.fetchall()]
+    c.execute('SELECT badge_name FROM badges WHERE user_id = %s', (user_id,))
+    earned_badges = [row['badge_name'] for row in c.fetchall()]
     
     new_badges = []
     
@@ -267,7 +290,7 @@ def check_and_award_badges(user_id: int, username: str):
     for badge_key in new_badges:
         badge = BADGES[badge_key]
         c.execute('''INSERT INTO badges (user_id, badge_name, badge_description, earned_date)
-                     VALUES (?, ?, ?, ?)''', 
+                     VALUES (%s, %s, %s, %s)''', 
                   (user_id, badge['name'], badge['description'], now))
     
     conn.commit()
@@ -435,19 +458,19 @@ async def log_session(ctx, subject: str, duration: int, *, description: str = ""
     points = calculate_points(duration, new_streak)
     
     # Ajoute les points
-    conn = sqlite3.connect('learning_streak.db')
+    conn = get_db_connection()
     c = conn.cursor()
     
     new_total = user[4] + points
     new_level = calculate_level(new_total)
     
-    c.execute('''UPDATE users SET total_points = ?, level = ? WHERE user_id = ?''',
+    c.execute('''UPDATE users SET total_points = %s, level = %s WHERE user_id = %s''',
               (new_total, new_level, ctx.author.id))
     
     # Log la session
     now = datetime.now().isoformat()
     c.execute('''INSERT INTO learning_logs (user_id, subject, description, duration, log_date, points_earned)
-                 VALUES (?, ?, ?, ?, ?, ?)''',
+                 VALUES (%s, %s, %s, %s, %s, %s)''',
               (ctx.author.id, subject, description, duration, now, points))
     
     conn.commit()
@@ -487,25 +510,26 @@ async def show_stats(ctx, member: Optional[discord.Member] = None):
         await ctx.send(f"❌ {target.name} n'est pas encore inscrit!")
         return
     
-    conn = sqlite3.connect('learning_streak.db')
+    conn = get_db_connection()
     c = conn.cursor()
     
     # Compte les logs
-    c.execute('SELECT COUNT(*), SUM(duration), COUNT(DISTINCT subject) FROM learning_logs WHERE user_id = ?', 
+    c.execute('SELECT COUNT(*) as count, SUM(duration) as total_duration, COUNT(DISTINCT subject) as unique_subjects FROM learning_logs WHERE user_id = %s', 
               (target.id,))
     log_stats = c.fetchone()
-    total_logs = log_stats[0] or 0
-    total_minutes = log_stats[1] or 0
-    unique_subjects = log_stats[2] or 0
+    total_logs = log_stats['count'] if log_stats else 0
+    total_minutes = log_stats['total_duration'] if log_stats and log_stats['total_duration'] else 0
+    unique_subjects = log_stats['unique_subjects'] if log_stats else 0
     
     # Top 3 sujets
     c.execute('''SELECT subject, COUNT(*) as count FROM learning_logs 
-                 WHERE user_id = ? GROUP BY subject ORDER BY count DESC LIMIT 3''', (target.id,))
+                 WHERE user_id = %s GROUP BY subject ORDER BY count DESC LIMIT 3''', (target.id,))
     top_subjects = c.fetchall()
     
     # Badges
-    c.execute('SELECT COUNT(*) FROM badges WHERE user_id = ?', (target.id,))
-    badge_count = c.fetchone()[0]
+    c.execute('SELECT COUNT(*) as count FROM badges WHERE user_id = %s', (target.id,))
+    result = c.fetchone()
+    badge_count = result['count'] if result else 0
     
     conn.close()
     
@@ -524,7 +548,7 @@ async def show_stats(ctx, member: Optional[discord.Member] = None):
     embed.add_field(name="🗺️ Sujets explorés", value=f"{unique_subjects}", inline=True)
     
     if top_subjects:
-        top_text = "\n".join([f"**{i+1}.** {subj[0]} ({subj[1]} sessions)" for i, subj in enumerate(top_subjects)])
+        top_text = "\n".join([f"**{i+1}.** {subj['subject']} ({subj['count']} sessions)" for i, subj in enumerate(top_subjects)])
         embed.add_field(name="🎯 Top sujets", value=top_text, inline=False)
     
     if user[7]:
@@ -541,9 +565,9 @@ async def show_badges(ctx):
         await ctx.send("❌ Tu dois d'abord t'inscrire avec `!start`")
         return
     
-    conn = sqlite3.connect('learning_streak.db')
+    conn = get_db_connection()
     c = conn.cursor()
-    c.execute('SELECT badge_name, badge_description, earned_date FROM badges WHERE user_id = ?', 
+    c.execute('SELECT badge_name, badge_description, earned_date FROM badges WHERE user_id = %s', 
               (ctx.author.id,))
     earned_badges = c.fetchall()
     conn.close()
@@ -556,13 +580,13 @@ async def show_badges(ctx):
     
     if earned_badges:
         for badge in earned_badges:
-            date = datetime.fromisoformat(badge[2]).strftime("%d/%m/%Y")
-            embed.add_field(name=badge[0], value=f"{badge[1]}\n*Obtenu le {date}*", inline=True)
+            date = datetime.fromisoformat(badge['earned_date']).strftime("%d/%m/%Y")
+            embed.add_field(name=badge['badge_name'], value=f"{badge['badge_description']}\n*Obtenu le {date}*", inline=True)
     else:
         embed.add_field(name="Aucun badge", value="Continue à apprendre pour débloquer des badges!", inline=False)
     
     # Badges non obtenus
-    earned_names = [b[0] for b in earned_badges]
+    earned_names = [b['badge_name'] for b in earned_badges]
     missing = [f"{v['name']} - {v['description']}" for k, v in BADGES.items() if v['name'] not in earned_names]
     
     if missing:
@@ -573,11 +597,11 @@ async def show_badges(ctx):
 @bot.command(name='challenge')
 async def daily_challenge(ctx):
     """Affiche le défi du jour généré par IA"""
-    conn = sqlite3.connect('learning_streak.db')
+    conn = get_db_connection()
     c = conn.cursor()
     
     today = datetime.now().date().isoformat()
-    c.execute('SELECT challenge_text, category FROM daily_challenges WHERE date = ?', (today,))
+    c.execute('SELECT challenge_text, category FROM daily_challenges WHERE date = %s', (today,))
     challenge = c.fetchone()
     conn.close()
     
@@ -665,10 +689,10 @@ Format:
                     explanation = ""
                 
                 # Sauvegarde dans la base de données
-                conn = sqlite3.connect('learning_streak.db')
+                conn = get_db_connection()
                 c = conn.cursor()
                 full_challenge = f"{challenge_text}\n\n{explanation}" if explanation else challenge_text
-                c.execute('INSERT INTO daily_challenges (challenge_text, category, date) VALUES (?, ?, ?)',
+                c.execute('INSERT INTO daily_challenges (challenge_text, category, date) VALUES (%s, %s, %s)',
                           (full_challenge, category, today))
                 conn.commit()
                 conn.close()
@@ -679,15 +703,15 @@ Format:
                 challenge_text = random.choice(CHALLENGE_CATEGORIES[category])
                 explanation = ""
                 
-                conn = sqlite3.connect('learning_streak.db')
+                conn = get_db_connection()
                 c = conn.cursor()
-                c.execute('INSERT INTO daily_challenges (challenge_text, category, date) VALUES (?, ?, ?)',
+                c.execute('INSERT INTO daily_challenges (challenge_text, category, date) VALUES (%s, %s, %s)',
                           (challenge_text, category, today))
                 conn.commit()
                 conn.close()
     else:
-        full_text = challenge[0]
-        category = challenge[1]
+        full_text = challenge['challenge_text']
+        category = challenge['category']
         
         # Sépare le défi et l'explication si possible
         if '\n\n' in full_text:
@@ -719,7 +743,7 @@ Format:
 @bot.command(name='leaderboard')
 async def leaderboard(ctx):
     """Affiche le classement des utilisateurs"""
-    conn = sqlite3.connect('learning_streak.db')
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute('''SELECT username, current_streak, longest_streak, total_points, level 
                  FROM users ORDER BY total_points DESC LIMIT 10''')
@@ -740,8 +764,8 @@ async def leaderboard(ctx):
     for i, user in enumerate(top_users):
         medal = medals[i] if i < 3 else f"**{i+1}.**"
         embed.add_field(
-            name=f"{medal} {user[0]}",
-            value=f"Niveau {user[4]} • {user[3]} pts • Streak: {user[1]} 🔥",
+            name=f"{medal} {user['username']}",
+            value=f"Niveau {user['level']} • {user['total_points']} pts • Streak: {user['current_streak']} 🔥",
             inline=False
         )
     
@@ -759,9 +783,9 @@ async def set_interests(ctx, *, interests: str):
     interest_list = [i.strip() for i in interests.split(',')]
     interest_json = json.dumps(interest_list)
     
-    conn = sqlite3.connect('learning_streak.db')
+    conn = get_db_connection()
     c = conn.cursor()
-    c.execute('UPDATE users SET interests = ? WHERE user_id = ?', (interest_json, ctx.author.id))
+    c.execute('UPDATE users SET interests = %s WHERE user_id = %s', (interest_json, ctx.author.id))
     conn.commit()
     conn.close()
     
@@ -788,11 +812,11 @@ async def suggest_topic(ctx):
         return
     
     # Récupère l'historique récent d'apprentissage
-    conn = sqlite3.connect('learning_streak.db')
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute('''SELECT subject FROM learning_logs 
-                 WHERE user_id = ? ORDER BY log_date DESC LIMIT 5''', (ctx.author.id,))
-    recent_subjects = [row[0] for row in c.fetchall()]
+                 WHERE user_id = %s ORDER BY log_date DESC LIMIT 5''', (ctx.author.id,))
+    recent_subjects = [row['subject'] for row in c.fetchall()]
     conn.close()
     
     # Montre que le bot réfléchit
@@ -874,10 +898,10 @@ async def show_history(ctx, limit: int = 5):
         await ctx.send("❌ Tu dois d'abord t'inscrire avec `!start`")
         return
     
-    conn = sqlite3.connect('learning_streak.db')
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute('''SELECT subject, description, duration, log_date, points_earned 
-                 FROM learning_logs WHERE user_id = ? ORDER BY log_date DESC LIMIT ?''',
+                 FROM learning_logs WHERE user_id = %s ORDER BY log_date DESC LIMIT %s''',
               (ctx.author.id, min(limit, 10)))
     logs = c.fetchall()
     conn.close()
@@ -893,11 +917,11 @@ async def show_history(ctx, limit: int = 5):
     )
     
     for log in logs:
-        date = datetime.fromisoformat(log[3]).strftime("%d/%m/%Y %H:%M")
-        desc = log[1][:50] + "..." if len(log[1]) > 50 else log[1]
+        date = datetime.fromisoformat(log['log_date']).strftime("%d/%m/%Y %H:%M")
+        desc = log['description'][:50] + "..." if len(log['description']) > 50 else log['description']
         embed.add_field(
-            name=f"📖 {log[0]}",
-            value=f"{desc}\n⏱️ {log[2]} min • 🎯 {log[4]} pts • 📅 {date}",
+            name=f"📖 {log['subject']}",
+            value=f"{desc}\n⏱️ {log['duration']} min • 🎯 {log['points_earned']} pts • 📅 {date}",
             inline=False
         )
     
@@ -908,17 +932,19 @@ async def daily_reminder():
     """Rappel quotidien pour ceux qui n'ont pas loggué aujourd'hui"""
     await bot.wait_until_ready()
     
-    conn = sqlite3.connect('learning_streak.db')
+    conn = get_db_connection()
     c = conn.cursor()
     
     today = datetime.now().date().isoformat()
-    c.execute('SELECT user_id, username, current_streak FROM users WHERE last_log_date != ? OR last_log_date IS NULL',
+    c.execute('SELECT user_id, username, current_streak FROM users WHERE last_log_date != %s OR last_log_date IS NULL',
               (today,))
     inactive_users = c.fetchall()
     conn.close()
     
     for user_data in inactive_users:
-        user_id, username, streak = user_data
+        user_id = user_data['user_id']
+        username = user_data['username']
+        streak = user_data['current_streak']
         try:
             user = await bot.fetch_user(user_id)
             
@@ -951,13 +977,13 @@ async def generate_daily_challenge():
     challenge_text = random.choice(CHALLENGE_CATEGORIES[category])
     today = datetime.now().date().isoformat()
     
-    conn = sqlite3.connect('learning_streak.db')
+    conn = get_db_connection()
     c = conn.cursor()
     
     # Vérifie si un défi existe déjà aujourd'hui
-    c.execute('SELECT id FROM daily_challenges WHERE date = ?', (today,))
+    c.execute('SELECT id FROM daily_challenges WHERE date = %s', (today,))
     if not c.fetchone():
-        c.execute('INSERT INTO daily_challenges (challenge_text, category, date) VALUES (?, ?, ?)',
+        c.execute('INSERT INTO daily_challenges (challenge_text, category, date) VALUES (%s, %s, %s)',
                   (challenge_text, category, today))
         conn.commit()
     
