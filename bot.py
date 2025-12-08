@@ -831,7 +831,7 @@ Comment commencer : [conseil pratique]"""
             ai_suggestion = response.choices[0].message.content
             
             embed = discord.Embed(
-                title="💡 Suggestion Personnalisée IA",
+                title="💡 Suggestion ",
                 description=ai_suggestion,
                 color=discord.Color.blue()
             )
