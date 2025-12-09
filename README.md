@@ -14,9 +14,9 @@ Un bot Discord gamifié pour suivre et encourager ton apprentissage quotidien. A
 - **Meilleur streak**: Enregistre ton record personnel
 
 ### 🎯 Gamification
-- **Système de points**: Gagne des points basés sur la durée de tes sessions et ton streak
+- **Système de points**: Gagne des points basés sur la durée de tes sessions, ton streak, et tes quiz
 - **Niveaux**: Monte de niveau en accumulant des points
-- **Badges**: Débloquer 8 badges différents en accomplissant des objectifs
+- **Badges**: Débloquer 11 badges différents en accomplissant des objectifs
   - 🌱 Premier Pas
   - 🔥 Guerrier Hebdomadaire (7 jours)
   - 🏆 Maître du Mois (30 jours)
@@ -25,6 +25,9 @@ Un bot Discord gamifié pour suivre et encourager ton apprentissage quotidien. A
   - 🗺️ Explorateur (10 sujets différents)
   - 🧠 Polymathe (25 sujets différents)
   - ⚡ Dédié (niveau 5)
+  - 🎓 Apprenti Quiz (5 quiz réussis)
+  - 🏅 Expert Quiz (20 quiz réussis)
+  - 💎 Score Parfait (100% à un quiz)
 
 ### 📊 Statistiques & Tracking
 - **Statistiques personnelles**: Visualise tes progrès (points, niveau, sessions, temps total)
@@ -35,6 +38,7 @@ Un bot Discord gamifié pour suivre et encourager ton apprentissage quotidien. A
 ### 🎲 Défis & Suggestions
 - **Défi du jour**: Un nouveau défi quotidien dans 6 catégories (science, technologie, histoire, art, philosophie, langues)
 - **Suggestions personnalisées**: Reçois des suggestions basées sur tes centres d'intérêt
+- **Quiz interactifs IA**: Questions générées dynamiquement par IA sur n'importe quel sujet
 - **Rappels quotidiens**: Le bot t'envoie un message si tu n'as pas loggué de session
 
 ## 🚀 Installation
@@ -139,6 +143,7 @@ Connecté à X serveur(s)
 | `!challenge` | Voir le défi du jour | `!challenge` |
 | `!suggest` | Obtenir une suggestion personnalisée | `!suggest` |
 | `!interests <sujets>` | Définir tes centres d'intérêt | `!interests Python, IA, Philosophie` |
+| `!quiz [sujet]` | Lancer un quiz IA interactif | `!quiz` ou `!quiz la photosynthèse` |
 
 ## 💡 Exemples d'Utilisation
 
@@ -305,6 +310,41 @@ Les contributions sont les bienvenues! N'hésite pas à:
 4. Push vers la branche (`git push origin feature/AmazingFeature`)
 5. Ouvrir une Pull Request
 
+## 🎯 Quiz Interactifs par IA
+
+Le bot utilise l'IA (Groq) pour générer des quiz dynamiques sur n'importe quel sujet !
+
+### Fonctionnalités
+- **Questions générées par IA**: Chaque quiz est unique et adapté au sujet demandé
+- **3 questions par quiz** avec 4 options chacune
+- **30 secondes** par question pour répondre
+- **Explications détaillées**: L'IA fournit une explication après chaque réponse
+- **Système de points bonus**:
+  - 50 points par bonne réponse
+  - +100 points pour un score parfait (100%)
+  - +50 points pour un très bon score (≥66%)
+
+### Utilisation
+```
+# Quiz basé sur tes centres d'intérêt
+Toi: !quiz
+Bot: 🤖 Génération d'un quiz sur Python... ⏳
+     🎯 Quiz : Python
+     Question 1/3: Qu'est-ce qu'un décorateur en Python ?
+     1. Une fonction qui modifie une autre fonction
+     2. Un commentaire de documentation
+     3. Une variable globale
+     4. Un type de classe
+     
+Toi: 1
+Bot: ✅ Bonne réponse ! Les décorateurs permettent de modifier le comportement d'une fonction.
+
+# Quiz sur un sujet spécifique
+Toi: !quiz la photosynthèse
+Bot: 🤖 Génération d'un quiz sur la photosynthèse... ⏳
+     [...]
+```
+
 ## 💡 Idées d'Améliorations Futures
 
 - [ ] Intégration d'APIs externes (Wikipedia, YouTube) pour suggestions enrichies
@@ -315,6 +355,7 @@ Les contributions sont les bienvenues! N'hésite pas à:
 - [ ] Intégration avec Notion/Trello pour suivi de projets
 - [ ] Système de récompenses réelles (code promo, etc.)
 - [ ] Mode compétition avec saisons et trophées
+- [x] Quiz interactifs générés par IA
 
 ## 📄 Licence
 
