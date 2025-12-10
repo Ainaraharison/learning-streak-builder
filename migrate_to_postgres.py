@@ -147,6 +147,33 @@ def migrate_data(sqlite_db_path='learning_streak.db'):
             pg_conn.commit()
             print(f"   ✅ {migrated_challenges}/{len(challenges)} défis quotidiens migrés")
         
+        # Migration des résultats de quiz (si la table existe)
+        print("\n6️⃣ Migration des résultats de quiz...")
+        try:
+            sqlite_cur.execute('SELECT * FROM quiz_results')
+            quiz_results = sqlite_cur.fetchall()
+            
+            with DatabaseConnection.get_connection() as pg_conn:
+                pg_cur = pg_conn.cursor()
+                
+                migrated_quizzes = 0
+                for quiz in quiz_results:
+                    try:
+                        pg_cur.execute('''
+                            INSERT INTO quiz_results (user_id, category, score, total_questions, points_earned, quiz_date)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                        ''', (quiz['user_id'], quiz['category'], quiz['score'], 
+                              quiz['total_questions'], quiz['points_earned'], quiz['quiz_date']))
+                        migrated_quizzes += 1
+                    except Exception as e:
+                        print(f"⚠️  Erreur lors de la migration du quiz {quiz['id']}: {e}")
+                
+                pg_conn.commit()
+                print(f"   ✅ {migrated_quizzes}/{len(quiz_results)} résultats de quiz migrés")
+        except Exception as e:
+            print(f"   ℹ️  Aucune donnée de quiz à migrer (table inexistante ou vide)")
+            migrated_quizzes = 0
+        
         sqlite_conn.close()
         
         print("\n" + "="*60)
@@ -157,6 +184,7 @@ def migrate_data(sqlite_db_path='learning_streak.db'):
         print(f"   - Logs d'apprentissage: {migrated_logs}")
         print(f"   - Badges: {migrated_badges}")
         print(f"   - Défis quotidiens: {migrated_challenges}")
+        print(f"   - Résultats de quiz: {migrated_quizzes}")
         print(f"\n💡 Vous pouvez maintenant déployer le bot avec PostgreSQL!")
         
         return True

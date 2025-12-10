@@ -106,6 +106,18 @@ def init_db():
                 category TEXT,
                 date TEXT
             )''')
+            
+            # PostgreSQL - Table des résultats de quiz
+            c.execute('''CREATE TABLE IF NOT EXISTS quiz_results (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT,
+                category TEXT,
+                score INTEGER,
+                total_questions INTEGER,
+                points_earned INTEGER,
+                quiz_date TEXT,
+                FOREIGN KEY (user_id) REFERENCES users (user_id)
+            )''')
         else:
             # SQLite - Table des utilisateurs
             c.execute('''CREATE TABLE IF NOT EXISTS users (
@@ -148,6 +160,18 @@ def init_db():
                 challenge_text TEXT,
                 category TEXT,
                 date TEXT
+            )''')
+            
+            # SQLite - Table des résultats de quiz
+            c.execute('''CREATE TABLE IF NOT EXISTS quiz_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                category TEXT,
+                score INTEGER,
+                total_questions INTEGER,
+                points_earned INTEGER,
+                quiz_date TEXT,
+                FOREIGN KEY (user_id) REFERENCES users (user_id)
             )''')
         
         conn.commit()

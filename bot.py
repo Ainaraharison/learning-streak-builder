@@ -56,6 +56,9 @@ BADGES = {
     'dedicated': {'name': '⚡ Dédié', 'description': 'Atteindre le niveau 5'},
     'marathon': {'name': '🎯 Marathon', 'description': '50 jours consécutifs'},
     'polymath': {'name': '🧠 Polymathe', 'description': 'Explorer 25 sujets différents'},
+    'quiz_novice': {'name': '🎓 Apprenti Quiz', 'description': 'Réussir 5 quiz'},
+    'quiz_expert': {'name': '🏅 Expert Quiz', 'description': 'Réussir 20 quiz'},
+    'perfect_score': {'name': '💎 Score Parfait', 'description': 'Obtenir 100% à un quiz'},
 }
 
 # Catégories de défis
@@ -252,6 +255,7 @@ Commandes disponibles :
 - !badges - Voir les badges
 - !suggest - Suggestion personnalisée
 - !interests - Définir ses centres d'intérêt
+- !quiz [sujet] - Lancer un quiz interactif
 - !leaderboard - Classement
 
 {user_context}
@@ -336,6 +340,7 @@ async def start(ctx):
             • `!log <sujet> <durée> <description>` - Logger une session
             • `!stats` - Voir tes statistiques
             • `!challenge` - Voir le défi du jour
+            • `!quiz [sujet]` - Lancer un quiz interactif
             • `!leaderboard` - Voir le classement
             • `!badges` - Voir tes badges
             • `!interests <sujets>` - Définir tes centres d'intérêt
@@ -846,6 +851,228 @@ async def daily_reminder():
         except:
             # L'utilisateur a peut-être désactivé les DMs
             pass
+
+async def generate_quiz_questions(topic: str, num_questions: int = 3) -> list:
+    """Génère des questions de quiz avec l'IA basées sur un sujet"""
+    try:
+        prompt = f"""Génère {num_questions} questions de quiz (QCM) sur le sujet : {topic}
+
+Pour chaque question, fournis :
+1. La question
+2. Quatre options de réponse (A, B, C, D)
+3. L'index de la bonne réponse (0, 1, 2, ou 3)
+
+Format ta réponse EXACTEMENT comme ceci (JSON strict) :
+[
+  {{
+    "question": "Question ici ?",
+    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "correct": 0,
+    "explanation": "Brève explication de la réponse"
+  }}
+]
+
+Règles importantes :
+- Questions variées et intéressantes
+- Niveau intermédiaire (ni trop facile, ni trop difficile)
+- Options plausibles pour éviter les réponses évidentes
+- Fournis uniquement le JSON, sans texte avant ou après"""
+
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "Tu es un créateur de quiz éducatif. Réponds uniquement en JSON valide."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.8,
+            max_tokens=1500
+        )
+        
+        content = response.choices[0].message.content.strip()
+        
+        # Nettoie le contenu si nécessaire
+        if content.startswith("```json"):
+            content = content[7:]
+        if content.startswith("```"):
+            content = content[3:]
+        if content.endswith("```"):
+            content = content[:-3]
+        content = content.strip()
+        
+        questions = json.loads(content)
+        return questions
+    
+    except Exception as e:
+        print(f"Erreur génération quiz: {e}")
+        # Questions de secours si l'IA échoue
+        return [
+            {
+                "question": f"Quelle est une caractéristique importante de {topic} ?",
+                "options": ["Option A", "Option B", "Option C", "Option D"],
+                "correct": 0,
+                "explanation": "Réponse générique"
+            }
+        ]
+
+@bot.command(name='quiz')
+async def quiz_command(ctx, *, topic: str = None):
+    """Lance un quiz interactif généré par IA basé sur tes centres d'intérêt"""
+    user = get_user(ctx.author.id)
+    
+    if not user:
+        await ctx.send("❌ Tu dois d'abord t'inscrire avec `!start`")
+        return
+    
+    # Si pas de sujet spécifié, utilise les centres d'intérêt de l'utilisateur
+    if not topic:
+        interests = json.loads(user[8]) if user[8] else []
+        if not interests:
+            await ctx.send("❌ Définis d'abord tes intérêts avec `!interests <sujets>` ou spécifie un sujet : `!quiz la photosynthèse`")
+            return
+        
+        # Choisit un intérêt aléatoire
+        topic = random.choice(interests)
+    
+    # Message de chargement
+    loading_msg = await ctx.send(f"🤖 Génération d'un quiz sur **{topic}**... ⏳")
+    
+    # Génère les questions avec l'IA
+    async with ctx.typing():
+        questions = await generate_quiz_questions(topic, num_questions=3)
+    
+    await loading_msg.delete()
+    
+    score = 0
+    total_questions = len(questions)
+    
+    embed = discord.Embed(
+        title=f"🎯 Quiz : {topic}",
+        description=f"Réponds à {total_questions} questions ! Réponds avec le numéro (1, 2, 3, ou 4)",
+        color=discord.Color.blue()
+    )
+    await ctx.send(embed=embed)
+    
+    for i, q in enumerate(questions, 1):
+        # Affiche la question
+        options_text = "\n".join([f"{j+1}. {opt}" for j, opt in enumerate(q['options'])])
+        
+        question_embed = discord.Embed(
+            title=f"Question {i}/{total_questions}",
+            description=f"**{q['question']}**\n\n{options_text}",
+            color=discord.Color.gold()
+        )
+        await ctx.send(embed=question_embed)
+        
+        # Attend la réponse de l'utilisateur
+        def check(m):
+            return m.author == ctx.author and m.channel == ctx.channel and m.content in ['1', '2', '3', '4']
+        
+        try:
+            answer_msg = await bot.wait_for('message', timeout=30.0, check=check)
+            user_answer = int(answer_msg.content) - 1
+            
+            if user_answer == q['correct']:
+                score += 1
+                explanation = q.get('explanation', '')
+                response = "✅ Bonne réponse !"
+                if explanation:
+                    response += f" {explanation}"
+                await ctx.send(response)
+            else:
+                correct_answer = q['options'][q['correct']]
+                explanation = q.get('explanation', '')
+                response = f"❌ Mauvaise réponse ! La bonne réponse était : **{correct_answer}**"
+                if explanation:
+                    response += f"\n💡 {explanation}"
+                await ctx.send(response)
+        
+        except asyncio.TimeoutError:
+            await ctx.send("⏱️ Temps écoulé ! Question suivante...")
+    
+    # Calcule les points bonus
+    percentage = (score / total_questions) * 100
+    base_points = score * 50
+    
+    # Bonus pour score parfait
+    if percentage == 100:
+        bonus_points = 100
+        bonus_msg = "🎉 Score parfait ! +100 points bonus !"
+    elif percentage >= 66:
+        bonus_points = 50
+        bonus_msg = "👍 Très bon score ! +50 points bonus !"
+    else:
+        bonus_points = 0
+        bonus_msg = ""
+    
+    total_points_earned = base_points + bonus_points
+    
+    # Met à jour les points de l'utilisateur
+    new_total = user[4] + total_points_earned
+    new_level = calculate_level(new_total)
+    
+    update_user_points(ctx.author.id, new_total, new_level)
+    
+    # Enregistre le résultat du quiz
+    now = datetime.now().isoformat()
+    execute_query(
+        '''INSERT INTO quiz_results (user_id, category, score, total_questions, points_earned, quiz_date)
+           VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph})''',
+        (ctx.author.id, topic, score, total_questions, total_points_earned, now)
+    )
+    
+    # Vérifie les badges de quiz
+    total_quizzes_result = execute_query(
+        'SELECT COUNT(*) FROM quiz_results WHERE user_id = {ph}',
+        (ctx.author.id,),
+        fetch_one=True
+    )
+    total_quizzes = total_quizzes_result[0] if total_quizzes_result else 0
+    
+    perfect_scores_result = execute_query(
+        'SELECT COUNT(*) FROM quiz_results WHERE user_id = {ph} AND score = total_questions',
+        (ctx.author.id,),
+        fetch_one=True
+    )
+    perfect_scores = perfect_scores_result[0] if perfect_scores_result else 0
+    
+    earned_badge_names = get_user_badges(ctx.author.id)
+    
+    new_badges = []
+    
+    # Attribution des badges
+    if total_quizzes >= 5 and 'quiz_novice' not in earned_badge_names:
+        new_badges.append('quiz_novice')
+    
+    if total_quizzes >= 20 and 'quiz_expert' not in earned_badge_names:
+        new_badges.append('quiz_expert')
+    
+    if perfect_scores >= 1 and 'perfect_score' not in earned_badge_names:
+        new_badges.append('perfect_score')
+    
+    # Attribuer les nouveaux badges
+    if new_badges:
+        for badge_key in new_badges:
+            badge = BADGES[badge_key]
+            insert_badge(ctx.author.id, badge['name'], badge['description'], now)
+    
+    # Résultats finaux
+    result_embed = discord.Embed(
+        title="📊 Résultats du Quiz",
+        description=f"**Score : {score}/{total_questions}** ({percentage:.0f}%)",
+        color=discord.Color.green() if percentage >= 66 else discord.Color.orange()
+    )
+    result_embed.add_field(name="🎯 Points gagnés", value=f"+{total_points_earned}", inline=True)
+    result_embed.add_field(name="📊 Niveau", value=f"{new_level}", inline=True)
+    result_embed.add_field(name="💰 Total points", value=f"{new_total}", inline=True)
+    
+    if bonus_msg:
+        result_embed.add_field(name="🌟 Bonus", value=bonus_msg, inline=False)
+    
+    if new_badges:
+        badges_text = "\n".join([f"{BADGES[b]['name']} - {BADGES[b]['description']}" for b in new_badges])
+        result_embed.add_field(name="🏆 Nouveaux Badges!", value=badges_text, inline=False)
+    
+    await ctx.send(embed=result_embed)
 
 @tasks.loop(hours=24)
 async def generate_daily_challenge():
