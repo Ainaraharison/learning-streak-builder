@@ -5,7 +5,6 @@ Un bot pour suivre et gamifier votre apprentissage quotidien
 
 import discord
 from discord.ext import commands, tasks
-import sqlite3
 import json
 from datetime import datetime, timedelta
 import asyncio
@@ -14,6 +13,25 @@ import os
 from typing import Optional
 from dotenv import load_dotenv
 from groq import Groq
+
+# Import du module de base de données
+from database import (
+    init_db,
+    get_user,
+    create_user as db_create_user,
+    update_user_streak,
+    update_user_points,
+    insert_learning_log,
+    insert_badge,
+    get_user_badges,
+    count_user_logs,
+    count_unique_subjects,
+    get_daily_challenge,
+    insert_daily_challenge,
+    update_user_interests,
+    execute_query,
+    DatabaseConnection
+)
 
 # Charge les variables d'environnement depuis le fichier .env
 load_dotenv()
@@ -28,70 +46,6 @@ intents.message_content = True  # Nécessaire pour lire les commandes
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Connexion à la base de données
-def init_db():
-    """Initialise la base de données SQLite"""
-    conn = sqlite3.connect('learning_streak.db')
-    c = conn.cursor()
-    
-    # Table des utilisateurs
-    c.execute('''CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
-        username TEXT,
-        current_streak INTEGER DEFAULT 0,
-        longest_streak INTEGER DEFAULT 0,
-        total_points INTEGER DEFAULT 0,
-        level INTEGER DEFAULT 1,
-        last_log_date TEXT,
-        created_at TEXT,
-        interests TEXT
-    )''')
-    
-    # Table des logs d'apprentissage
-    c.execute('''CREATE TABLE IF NOT EXISTS learning_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        subject TEXT,
-        description TEXT,
-        duration INTEGER,
-        log_date TEXT,
-        points_earned INTEGER,
-        FOREIGN KEY (user_id) REFERENCES users (user_id)
-    )''')
-    
-    # Table des badges
-    c.execute('''CREATE TABLE IF NOT EXISTS badges (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        badge_name TEXT,
-        badge_description TEXT,
-        earned_date TEXT,
-        FOREIGN KEY (user_id) REFERENCES users (user_id)
-    )''')
-    
-    # Table des défis du jour
-    c.execute('''CREATE TABLE IF NOT EXISTS daily_challenges (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        challenge_text TEXT,
-        category TEXT,
-        date TEXT
-    )''')
-    
-    # Table des résultats des quiz
-    c.execute('''CREATE TABLE IF NOT EXISTS quiz_results (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        category TEXT,
-        score INTEGER,
-        total_questions INTEGER,
-        points_earned INTEGER,
-        quiz_date TEXT,
-        FOREIGN KEY (user_id) REFERENCES users (user_id)
-    )''')
-    
-    conn.commit()
-    conn.close()
-
 # Système de badges
 BADGES = {
     'first_step': {'name': '🌱 Premier Pas', 'description': 'Première session loguée'},
@@ -102,9 +56,6 @@ BADGES = {
     'dedicated': {'name': '⚡ Dédié', 'description': 'Atteindre le niveau 5'},
     'marathon': {'name': '🎯 Marathon', 'description': '50 jours consécutifs'},
     'polymath': {'name': '🧠 Polymathe', 'description': 'Explorer 25 sujets différents'},
-    'quiz_novice': {'name': '🎓 Apprenti Quiz', 'description': 'Réussir 5 quiz'},
-    'quiz_expert': {'name': '🏅 Expert Quiz', 'description': 'Réussir 20 quiz'},
-    'perfect_score': {'name': '💎 Score Parfait', 'description': 'Obtenir 100% à un quiz'},
 }
 
 # Catégories de défis
@@ -153,30 +104,13 @@ CHALLENGE_CATEGORIES = {
     ]
 }
 
-def get_user(user_id: int):
-    """Récupère les infos d'un utilisateur"""
-    conn = sqlite3.connect('learning_streak.db')
-    c = conn.cursor()
-    c.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
-    user = c.fetchone()
-    conn.close()
-    return user
-
 def create_user(user_id: int, username: str):
     """Crée un nouvel utilisateur"""
-    conn = sqlite3.connect('learning_streak.db')
-    c = conn.cursor()
     now = datetime.now().isoformat()
-    c.execute('''INSERT INTO users (user_id, username, created_at, interests) 
-                 VALUES (?, ?, ?, ?)''', (user_id, username, now, '[]'))
-    conn.commit()
-    conn.close()
+    db_create_user(user_id, username, now)
 
 def update_streak(user_id: int):
     """Met à jour le streak de l'utilisateur"""
-    conn = sqlite3.connect('learning_streak.db')
-    c = conn.cursor()
-    
     user = get_user(user_id)
     if not user:
         return 0
@@ -206,10 +140,7 @@ def update_streak(user_id: int):
     # Mise à jour du longest streak
     new_longest = max(longest_streak, new_streak)
     
-    c.execute('''UPDATE users SET current_streak = ?, longest_streak = ?, last_log_date = ? 
-                 WHERE user_id = ?''', (new_streak, new_longest, today.isoformat(), user_id))
-    conn.commit()
-    conn.close()
+    update_user_streak(user_id, new_streak, new_longest, today.isoformat())
     
     return new_streak
 
@@ -226,9 +157,6 @@ def calculate_level(total_points: int) -> int:
 
 def check_and_award_badges(user_id: int, username: str):
     """Vérifie et attribue les badges"""
-    conn = sqlite3.connect('learning_streak.db')
-    c = conn.cursor()
-    
     user = get_user(user_id)
     if not user:
         return []
@@ -238,55 +166,45 @@ def check_and_award_badges(user_id: int, username: str):
     total_points = int(user[4])
     level = int(user[5])
     
-    # Compte le nombre de logs
-    c.execute('SELECT COUNT(*) FROM learning_logs WHERE user_id = ?', (user_id,))
-    total_logs = c.fetchone()[0]
-    
-    # Compte les sujets uniques
-    c.execute('SELECT COUNT(DISTINCT subject) FROM learning_logs WHERE user_id = ?', (user_id,))
-    unique_subjects = c.fetchone()[0]
+    # Compte le nombre de logs et sujets uniques
+    total_logs = count_user_logs(user_id)
+    unique_subjects = count_unique_subjects(user_id)
     
     # Vérifie quels badges l'utilisateur a déjà
-    c.execute('SELECT badge_name FROM badges WHERE user_id = ?', (user_id,))
-    earned_badges = [row[0] for row in c.fetchall()]
+    earned_badge_names = get_user_badges(user_id)
     
     new_badges = []
     
     # Vérification des conditions
-    if total_logs == 1 and 'first_step' not in earned_badges:
+    if total_logs == 1 and 'first_step' not in earned_badge_names:
         new_badges.append('first_step')
     
-    if current_streak >= 7 and 'week_warrior' not in earned_badges:
+    if current_streak >= 7 and 'week_warrior' not in earned_badge_names:
         new_badges.append('week_warrior')
     
-    if current_streak >= 30 and 'month_master' not in earned_badges:
+    if current_streak >= 30 and 'month_master' not in earned_badge_names:
         new_badges.append('month_master')
     
-    if current_streak >= 50 and 'marathon' not in earned_badges:
+    if current_streak >= 50 and 'marathon' not in earned_badge_names:
         new_badges.append('marathon')
     
-    if total_logs >= 100 and 'century' not in earned_badges:
+    if total_logs >= 100 and 'century' not in earned_badge_names:
         new_badges.append('century')
     
-    if unique_subjects >= 10 and 'explorer' not in earned_badges:
+    if unique_subjects >= 10 and 'explorer' not in earned_badge_names:
         new_badges.append('explorer')
     
-    if unique_subjects >= 25 and 'polymath' not in earned_badges:
+    if unique_subjects >= 25 and 'polymath' not in earned_badge_names:
         new_badges.append('polymath')
     
-    if level >= 5 and 'dedicated' not in earned_badges:
+    if level >= 5 and 'dedicated' not in earned_badge_names:
         new_badges.append('dedicated')
     
     # Attribuer les nouveaux badges
     now = datetime.now().isoformat()
     for badge_key in new_badges:
         badge = BADGES[badge_key]
-        c.execute('''INSERT INTO badges (user_id, badge_name, badge_description, earned_date)
-                     VALUES (?, ?, ?, ?)''', 
-                  (user_id, badge['name'], badge['description'], now))
-    
-    conn.commit()
-    conn.close()
+        insert_badge(user_id, badge['name'], badge['description'], now)
     
     return new_badges
 
@@ -334,7 +252,6 @@ Commandes disponibles :
 - !badges - Voir les badges
 - !suggest - Suggestion personnalisée
 - !interests - Définir ses centres d'intérêt
-- !quiz [catégorie] - Lancer un quiz interactif
 - !leaderboard - Classement
 
 {user_context}
@@ -419,7 +336,6 @@ async def start(ctx):
             • `!log <sujet> <durée> <description>` - Logger une session
             • `!stats` - Voir tes statistiques
             • `!challenge` - Voir le défi du jour
-            • `!quiz [catégorie]` - Lancer un quiz interactif
             • `!leaderboard` - Voir le classement
             • `!badges` - Voir tes badges
             • `!interests <sujets>` - Définir tes centres d'intérêt
@@ -452,23 +368,14 @@ async def log_session(ctx, subject: str, duration: int, *, description: str = ""
     points = calculate_points(duration, new_streak)
     
     # Ajoute les points
-    conn = sqlite3.connect('learning_streak.db')
-    c = conn.cursor()
-    
     new_total = user[4] + points
     new_level = calculate_level(new_total)
     
-    c.execute('''UPDATE users SET total_points = ?, level = ? WHERE user_id = ?''',
-              (new_total, new_level, ctx.author.id))
+    update_user_points(ctx.author.id, new_total, new_level)
     
     # Log la session
     now = datetime.now().isoformat()
-    c.execute('''INSERT INTO learning_logs (user_id, subject, description, duration, log_date, points_earned)
-                 VALUES (?, ?, ?, ?, ?, ?)''',
-              (ctx.author.id, subject, description, duration, now, points))
-    
-    conn.commit()
-    conn.close()
+    insert_learning_log(ctx.author.id, subject, description, duration, now, points)
     
     # Vérifier les badges
     new_badges = check_and_award_badges(ctx.author.id, ctx.author.name)
@@ -504,27 +411,31 @@ async def show_stats(ctx, member: Optional[discord.Member] = None):
         await ctx.send(f"❌ {target.name} n'est pas encore inscrit!")
         return
     
-    conn = sqlite3.connect('learning_streak.db')
-    c = conn.cursor()
-    
     # Compte les logs
-    c.execute('SELECT COUNT(*), SUM(duration), COUNT(DISTINCT subject) FROM learning_logs WHERE user_id = ?', 
-              (target.id,))
-    log_stats = c.fetchone()
-    total_logs = log_stats[0] or 0
-    total_minutes = log_stats[1] or 0
-    unique_subjects = log_stats[2] or 0
+    log_stats = execute_query(
+        'SELECT COUNT(*), SUM(duration), COUNT(DISTINCT subject) FROM learning_logs WHERE user_id = {ph}',
+        (target.id,),
+        fetch_one=True
+    )
+    total_logs = log_stats[0] if log_stats else 0
+    total_minutes = log_stats[1] if log_stats and log_stats[1] else 0
+    unique_subjects = log_stats[2] if log_stats else 0
     
     # Top 3 sujets
-    c.execute('''SELECT subject, COUNT(*) as count FROM learning_logs 
-                 WHERE user_id = ? GROUP BY subject ORDER BY count DESC LIMIT 3''', (target.id,))
-    top_subjects = c.fetchall()
+    top_subjects = execute_query(
+        '''SELECT subject, COUNT(*) as count FROM learning_logs 
+           WHERE user_id = {ph} GROUP BY subject ORDER BY count DESC LIMIT 3''',
+        (target.id,),
+        fetch_all=True
+    )
     
     # Badges
-    c.execute('SELECT COUNT(*) FROM badges WHERE user_id = ?', (target.id,))
-    badge_count = c.fetchone()[0]
-    
-    conn.close()
+    badge_result = execute_query(
+        'SELECT COUNT(*) FROM badges WHERE user_id = {ph}',
+        (target.id,),
+        fetch_one=True
+    )
+    badge_count = badge_result[0] if badge_result else 0
     
     embed = discord.Embed(
         title=f"📊 Statistiques de {target.name}",
@@ -558,12 +469,11 @@ async def show_badges(ctx):
         await ctx.send("❌ Tu dois d'abord t'inscrire avec `!start`")
         return
     
-    conn = sqlite3.connect('learning_streak.db')
-    c = conn.cursor()
-    c.execute('SELECT badge_name, badge_description, earned_date FROM badges WHERE user_id = ?', 
-              (ctx.author.id,))
-    earned_badges = c.fetchall()
-    conn.close()
+    earned_badges = execute_query(
+        'SELECT badge_name, badge_description, earned_date FROM badges WHERE user_id = {ph}',
+        (ctx.author.id,),
+        fetch_all=True
+    )
     
     embed = discord.Embed(
         title=f"🏆 Badges de {ctx.author.name}",
@@ -590,13 +500,8 @@ async def show_badges(ctx):
 @bot.command(name='challenge')
 async def daily_challenge(ctx):
     """Affiche le défi du jour généré par IA"""
-    conn = sqlite3.connect('learning_streak.db')
-    c = conn.cursor()
-    
     today = datetime.now().date().isoformat()
-    c.execute('SELECT challenge_text, category FROM daily_challenges WHERE date = ?', (today,))
-    challenge = c.fetchone()
-    conn.close()
+    challenge = get_daily_challenge(today)
     
     if not challenge:
         # Génère un nouveau défi avec l'IA
@@ -682,13 +587,8 @@ Format:
                     explanation = ""
                 
                 # Sauvegarde dans la base de données
-                conn = sqlite3.connect('learning_streak.db')
-                c = conn.cursor()
                 full_challenge = f"{challenge_text}\n\n{explanation}" if explanation else challenge_text
-                c.execute('INSERT INTO daily_challenges (challenge_text, category, date) VALUES (?, ?, ?)',
-                          (full_challenge, category, today))
-                conn.commit()
-                conn.close()
+                insert_daily_challenge(full_challenge, category, today)
                 
             except Exception as e:
                 print(f"Erreur lors de la génération du défi: {e}")
@@ -696,12 +596,7 @@ Format:
                 challenge_text = random.choice(CHALLENGE_CATEGORIES[category])
                 explanation = ""
                 
-                conn = sqlite3.connect('learning_streak.db')
-                c = conn.cursor()
-                c.execute('INSERT INTO daily_challenges (challenge_text, category, date) VALUES (?, ?, ?)',
-                          (challenge_text, category, today))
-                conn.commit()
-                conn.close()
+                insert_daily_challenge(challenge_text, category, today)
     else:
         full_text = challenge[0]
         category = challenge[1]
@@ -736,12 +631,11 @@ Format:
 @bot.command(name='leaderboard')
 async def leaderboard(ctx):
     """Affiche le classement des utilisateurs"""
-    conn = sqlite3.connect('learning_streak.db')
-    c = conn.cursor()
-    c.execute('''SELECT username, current_streak, longest_streak, total_points, level 
-                 FROM users ORDER BY total_points DESC LIMIT 10''')
-    top_users = c.fetchall()
-    conn.close()
+    top_users = execute_query(
+        '''SELECT username, current_streak, longest_streak, total_points, level 
+           FROM users ORDER BY total_points DESC LIMIT 10''',
+        fetch_all=True
+    )
     
     if not top_users:
         await ctx.send("❌ Aucun utilisateur dans le classement")
@@ -776,11 +670,7 @@ async def set_interests(ctx, *, interests: str):
     interest_list = [i.strip() for i in interests.split(',')]
     interest_json = json.dumps(interest_list)
     
-    conn = sqlite3.connect('learning_streak.db')
-    c = conn.cursor()
-    c.execute('UPDATE users SET interests = ? WHERE user_id = ?', (interest_json, ctx.author.id))
-    conn.commit()
-    conn.close()
+    update_user_interests(ctx.author.id, interest_json)
     
     embed = discord.Embed(
         title="✅ Centres d'intérêt mis à jour!",
@@ -805,12 +695,13 @@ async def suggest_topic(ctx):
         return
     
     # Récupère l'historique récent d'apprentissage
-    conn = sqlite3.connect('learning_streak.db')
-    c = conn.cursor()
-    c.execute('''SELECT subject FROM learning_logs 
-                 WHERE user_id = ? ORDER BY log_date DESC LIMIT 5''', (ctx.author.id,))
-    recent_subjects = [row[0] for row in c.fetchall()]
-    conn.close()
+    recent_results = execute_query(
+        '''SELECT subject FROM learning_logs 
+           WHERE user_id = {ph} ORDER BY log_date DESC LIMIT 5''',
+        (ctx.author.id,),
+        fetch_all=True
+    )
+    recent_subjects = [row[0] for row in recent_results] if recent_results else []
     
     # Montre que le bot réfléchit
     async with ctx.typing():
@@ -891,13 +782,12 @@ async def show_history(ctx, limit: int = 5):
         await ctx.send("❌ Tu dois d'abord t'inscrire avec `!start`")
         return
     
-    conn = sqlite3.connect('learning_streak.db')
-    c = conn.cursor()
-    c.execute('''SELECT subject, description, duration, log_date, points_earned 
-                 FROM learning_logs WHERE user_id = ? ORDER BY log_date DESC LIMIT ?''',
-              (ctx.author.id, min(limit, 10)))
-    logs = c.fetchall()
-    conn.close()
+    logs = execute_query(
+        '''SELECT subject, description, duration, log_date, points_earned 
+           FROM learning_logs WHERE user_id = {ph} ORDER BY log_date DESC LIMIT {ph}''',
+        (ctx.author.id, min(limit, 10)),
+        fetch_all=True
+    )
     
     if not logs:
         await ctx.send("❌ Aucune session enregistrée")
@@ -925,14 +815,12 @@ async def daily_reminder():
     """Rappel quotidien pour ceux qui n'ont pas loggué aujourd'hui"""
     await bot.wait_until_ready()
     
-    conn = sqlite3.connect('learning_streak.db')
-    c = conn.cursor()
-    
     today = datetime.now().date().isoformat()
-    c.execute('SELECT user_id, username, current_streak FROM users WHERE last_log_date != ? OR last_log_date IS NULL',
-              (today,))
-    inactive_users = c.fetchall()
-    conn.close()
+    inactive_users = execute_query(
+        'SELECT user_id, username, current_streak FROM users WHERE last_log_date != {ph} OR last_log_date IS NULL',
+        (today,),
+        fetch_all=True
+    )
     
     for user_data in inactive_users:
         user_id, username, streak = user_data
@@ -968,244 +856,14 @@ async def generate_daily_challenge():
     challenge_text = random.choice(CHALLENGE_CATEGORIES[category])
     today = datetime.now().date().isoformat()
     
-    conn = sqlite3.connect('learning_streak.db')
-    c = conn.cursor()
-    
     # Vérifie si un défi existe déjà aujourd'hui
-    c.execute('SELECT id FROM daily_challenges WHERE date = ?', (today,))
-    if not c.fetchone():
-        c.execute('INSERT INTO daily_challenges (challenge_text, category, date) VALUES (?, ?, ?)',
-                  (challenge_text, category, today))
-        conn.commit()
-    
-    conn.close()
-
-async def generate_quiz_questions(topic: str, num_questions: int = 3) -> list:
-    """Génère des questions de quiz avec l'IA basées sur un sujet"""
-    try:
-        prompt = f"""Génère {num_questions} questions de quiz (QCM) sur le sujet : {topic}
-
-Pour chaque question, fournis :
-1. La question
-2. Quatre options de réponse (A, B, C, D)
-3. L'index de la bonne réponse (0, 1, 2, ou 3)
-
-Format ta réponse EXACTEMENT comme ceci (JSON strict) :
-[
-  {{
-    "question": "Question ici ?",
-    "options": ["Option A", "Option B", "Option C", "Option D"],
-    "correct": 0,
-    "explanation": "Brève explication de la réponse"
-  }}
-]
-
-Règles importantes :
-- Questions variées et intéressantes
-- Niveau intermédiaire (ni trop facile, ni trop difficile)
-- Options plausibles pour éviter les réponses évidentes
-- Fournis uniquement le JSON, sans texte avant ou après"""
-
-        response = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": "Tu es un créateur de quiz éducatif. Réponds uniquement en JSON valide."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.8,
-            max_tokens=1500
-        )
-        
-        content = response.choices[0].message.content.strip()
-        
-        # Nettoie le contenu si nécessaire
-        if content.startswith("```json"):
-            content = content[7:]
-        if content.startswith("```"):
-            content = content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-        content = content.strip()
-        
-        questions = json.loads(content)
-        return questions
-    
-    except Exception as e:
-        print(f"Erreur génération quiz: {e}")
-        # Questions de secours si l'IA échoue
-        return [
-            {
-                "question": f"Quelle est une caractéristique importante de {topic} ?",
-                "options": ["Option A", "Option B", "Option C", "Option D"],
-                "correct": 0,
-                "explanation": "Réponse générique"
-            }
-        ]
-
-@bot.command(name='quiz')
-async def quiz_command(ctx, *, topic: str = None):
-    """Lance un quiz interactif généré par IA basé sur tes centres d'intérêt"""
-    user = get_user(ctx.author.id)
-    
-    if not user:
-        await ctx.send("❌ Tu dois d'abord t'inscrire avec `!start`")
-        return
-    
-    # Si pas de sujet spécifié, utilise les centres d'intérêt de l'utilisateur
-    if not topic:
-        interests = json.loads(user[8]) if user[8] else []
-        if not interests:
-            await ctx.send("❌ Définis d'abord tes intérêts avec `!interests <sujets>` ou spécifie un sujet : `!quiz la photosynthèse`")
-            return
-        
-        # Choisit un intérêt aléatoire
-        topic = random.choice(interests)
-    
-    # Message de chargement
-    loading_msg = await ctx.send(f"🤖 Génération d'un quiz sur **{topic}**... ⏳")
-    
-    # Génère les questions avec l'IA
-    async with ctx.typing():
-        questions = await generate_quiz_questions(topic, num_questions=3)
-    
-    await loading_msg.delete()
-    
-    score = 0
-    total_questions = len(questions)
-    
-    embed = discord.Embed(
-        title=f"🎯 Quiz : {topic}",
-        description=f"Réponds à {total_questions} questions ! Réponds avec le numéro (1, 2, 3, ou 4)",
-        color=discord.Color.blue()
+    existing = execute_query(
+        'SELECT id FROM daily_challenges WHERE date = {ph}',
+        (today,),
+        fetch_one=True
     )
-    await ctx.send(embed=embed)
-    
-    for i, q in enumerate(questions, 1):
-        # Affiche la question
-        options_text = "\n".join([f"{j+1}. {opt}" for j, opt in enumerate(q['options'])])
-        
-        question_embed = discord.Embed(
-            title=f"Question {i}/{total_questions}",
-            description=f"**{q['question']}**\n\n{options_text}",
-            color=discord.Color.gold()
-        )
-        await ctx.send(embed=question_embed)
-        
-        # Attend la réponse de l'utilisateur
-        def check(m):
-            return m.author == ctx.author and m.channel == ctx.channel and m.content in ['1', '2', '3', '4']
-        
-        try:
-            answer_msg = await bot.wait_for('message', timeout=30.0, check=check)
-            user_answer = int(answer_msg.content) - 1
-            
-            if user_answer == q['correct']:
-                score += 1
-                explanation = q.get('explanation', '')
-                response = "✅ Bonne réponse !"
-                if explanation:
-                    response += f" {explanation}"
-                await ctx.send(response)
-            else:
-                correct_answer = q['options'][q['correct']]
-                explanation = q.get('explanation', '')
-                response = f"❌ Mauvaise réponse ! La bonne réponse était : **{correct_answer}**"
-                if explanation:
-                    response += f"\n💡 {explanation}"
-                await ctx.send(response)
-        
-        except asyncio.TimeoutError:
-            await ctx.send("⏱️ Temps écoulé ! Question suivante...")
-    
-    # Calcule les points bonus
-    percentage = (score / total_questions) * 100
-    base_points = score * 50
-    
-    # Bonus pour score parfait
-    if percentage == 100:
-        bonus_points = 100
-        bonus_msg = "🎉 Score parfait ! +100 points bonus !"
-    elif percentage >= 66:
-        bonus_points = 50
-        bonus_msg = "👍 Très bon score ! +50 points bonus !"
-    else:
-        bonus_points = 0
-        bonus_msg = ""
-    
-    total_points_earned = base_points + bonus_points
-    
-    # Met à jour les points de l'utilisateur
-    conn = sqlite3.connect('learning_streak.db')
-    c = conn.cursor()
-    
-    new_total = user[4] + total_points_earned
-    new_level = calculate_level(new_total)
-    
-    c.execute('UPDATE users SET total_points = ?, level = ? WHERE user_id = ?',
-              (new_total, new_level, ctx.author.id))
-    
-    # Enregistre le résultat du quiz
-    now = datetime.now().isoformat()
-    c.execute('''INSERT INTO quiz_results (user_id, category, score, total_questions, points_earned, quiz_date)
-                 VALUES (?, ?, ?, ?, ?, ?)''',
-              (ctx.author.id, topic, score, total_questions, total_points_earned, now))
-    
-    conn.commit()
-    
-    # Vérifie les badges de quiz
-    c.execute('SELECT COUNT(*) FROM quiz_results WHERE user_id = ?', (ctx.author.id,))
-    total_quizzes = c.fetchone()[0]
-    
-    c.execute('SELECT COUNT(*) FROM quiz_results WHERE user_id = ? AND score = total_questions', (ctx.author.id,))
-    perfect_scores = c.fetchone()[0]
-    
-    c.execute('SELECT badge_name FROM badges WHERE user_id = ?', (ctx.author.id,))
-    earned_badges = [row[0] for row in c.fetchall()]
-    
-    conn.close()
-    
-    new_badges = []
-    
-    # Attribution des badges
-    if total_quizzes >= 5 and 'quiz_novice' not in earned_badges:
-        new_badges.append('quiz_novice')
-    
-    if total_quizzes >= 20 and 'quiz_expert' not in earned_badges:
-        new_badges.append('quiz_expert')
-    
-    if perfect_scores >= 1 and 'perfect_score' not in earned_badges:
-        new_badges.append('perfect_score')
-    
-    # Attribuer les nouveaux badges
-    if new_badges:
-        conn = sqlite3.connect('learning_streak.db')
-        c = conn.cursor()
-        for badge_key in new_badges:
-            badge = BADGES[badge_key]
-            c.execute('''INSERT INTO badges (user_id, badge_name, badge_description, earned_date)
-                         VALUES (?, ?, ?, ?)''', 
-                      (ctx.author.id, badge['name'], badge['description'], now))
-        conn.commit()
-        conn.close()
-    
-    # Résultats finaux
-    result_embed = discord.Embed(
-        title="📊 Résultats du Quiz",
-        description=f"**Score : {score}/{total_questions}** ({percentage:.0f}%)",
-        color=discord.Color.green() if percentage >= 66 else discord.Color.orange()
-    )
-    result_embed.add_field(name="🎯 Points gagnés", value=f"+{total_points_earned}", inline=True)
-    result_embed.add_field(name="📊 Niveau", value=f"{new_level}", inline=True)
-    result_embed.add_field(name="💰 Total points", value=f"{new_total}", inline=True)
-    
-    if bonus_msg:
-        result_embed.add_field(name="🌟 Bonus", value=bonus_msg, inline=False)
-    
-    if new_badges:
-        badges_text = "\n".join([f"{BADGES[b]['name']} - {BADGES[b]['description']}" for b in new_badges])
-        result_embed.add_field(name="🏆 Nouveaux Badges!", value=badges_text, inline=False)
-    
-    await ctx.send(embed=result_embed)
+    if not existing:
+        insert_daily_challenge(challenge_text, category, today)
 
 @bot.event
 async def on_command_error(ctx, error):

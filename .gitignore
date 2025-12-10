@@ -6,8 +6,10 @@ ENV/
 
 # Database
 *.db
+*.db.*
 *.sqlite
 *.sqlite3
+learning_streak.db*
 
 # Python
 __pycache__/

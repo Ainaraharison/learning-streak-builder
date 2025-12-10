@@ -83,17 +83,71 @@ Le bot devrait répondre ! 🎉
 - **Métriques** : Railway affiche l'utilisation CPU/RAM
 - **Redémarrage automatique** : Railway redémarre le bot en cas de crash
 
-## 💾 Base de Données SQLite
+## 💾 Stockage Permanent des Données avec PostgreSQL
 
-⚠️ **Important** : Sur Railway, la base de données SQLite est **temporaire** et se réinitialise à chaque redéploiement.
+✅ **Le bot supporte maintenant PostgreSQL pour un stockage permanent !**
 
-### Solution : Passer à PostgreSQL (Recommandé pour production)
+### Configuration PostgreSQL sur Railway
+
+#### 1️⃣ Ajouter PostgreSQL à votre projet
 
 1. Dans Railway, clique sur **"New"** → **"Database"** → **"Add PostgreSQL"**
-2. Railway créera automatiquement la variable `DATABASE_URL`
-3. Il faudrait modifier `bot.py` pour utiliser PostgreSQL au lieu de SQLite
+2. Railway créera automatiquement la variable d'environnement `DATABASE_URL`
+3. **C'est tout !** Le bot détectera automatiquement PostgreSQL et l'utilisera
 
-**Pour l'instant**, SQLite fonctionne mais les données seront perdues lors des mises à jour. C'est OK pour les tests.
+#### 2️⃣ Migrer vos données existantes (Optionnel)
+
+Si vous avez déjà des données dans SQLite local :
+
+```powershell
+# 1. Assurez-vous que DATABASE_URL est défini
+$env:DATABASE_URL="postgresql://user:password@host:port/dbname"
+
+# 2. Lancez le script de migration
+python migrate_to_postgres.py
+```
+
+Le script va :
+- Créer une sauvegarde de votre base SQLite
+- Transférer tous les utilisateurs, logs, badges et défis
+- Confirmer le succès de la migration
+
+#### 3️⃣ Fonctionnement Automatique
+
+Le bot détecte automatiquement le type de base de données :
+
+- **Avec `DATABASE_URL`** → PostgreSQL (production)
+- **Sans `DATABASE_URL`** → SQLite (développement local)
+
+Aucune modification de code nécessaire ! 🎉
+
+### Avantages de PostgreSQL
+
+✅ **Persistance totale** : Les données survivent aux redéploiements
+✅ **Sauvegarde automatique** : Railway sauvegarde votre base
+✅ **Scalabilité** : Support de plusieurs instances du bot
+✅ **Performance** : Meilleur pour de nombreux utilisateurs
+
+### Mode Développement Local
+
+Pour tester localement avec SQLite :
+
+```powershell
+# Ne définissez PAS DATABASE_URL
+# Le bot utilisera automatiquement learning_streak.db
+python bot.py
+```
+
+### Vérifier le Type de Base de Données
+
+Les logs au démarrage affichent :
+```
+✅ Base de données initialisée (PostgreSQL)
+```
+ou
+```
+✅ Base de données initialisée (SQLite)
+```
 
 ## 🔧 Redéployer après Modifications
 

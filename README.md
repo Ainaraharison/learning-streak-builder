@@ -215,13 +215,33 @@ Niveau = √(Total points / 100)
 
 ## 🗄️ Base de Données
 
-Le bot utilise SQLite pour stocker toutes les données localement dans `learning_streak.db`.
+Le bot supporte **deux types de bases de données** :
+
+### 🏠 SQLite (Développement Local)
+- Stockage dans le fichier `learning_streak.db`
+- Aucune configuration requise
+- Parfait pour tester en local
+
+### 🚀 PostgreSQL (Production)
+- Stockage permanent sur Railway.app
+- Les données survivent aux redéploiements
+- Configuration automatique avec `DATABASE_URL`
+
+**Le bot détecte automatiquement le type de base à utiliser !**
 
 ### Tables
 - **users**: Informations des utilisateurs (streaks, points, niveau)
 - **learning_logs**: Historique de toutes les sessions
 - **badges**: Badges débloqués par les utilisateurs
 - **daily_challenges**: Défis quotidiens générés
+
+### 🔄 Migration
+Pour migrer vos données de SQLite vers PostgreSQL :
+```powershell
+python migrate_to_postgres.py
+```
+
+Voir [DATA_STORAGE.md](DATA_STORAGE.md) et [MIGRATION.md](MIGRATION.md) pour plus de détails.
 
 ## 🔧 Personnalisation
 
@@ -292,13 +312,20 @@ Start-Process python -ArgumentList "bot.py" -WindowStyle Hidden
 ```
 Learning_streak_builder/
 │
-├── bot.py                 # Code principal du bot
-├── requirements.txt       # Dépendances Python
-├── .env                   # Configuration (token) - À créer
-├── .env.example          # Exemple de configuration
-├── .gitignore            # Fichiers à ignorer par Git
-├── README.md             # Ce fichier
-└── learning_streak.db    # Base de données (créée automatiquement)
+├── bot.py                    # Code principal du bot
+├── database.py               # Module de gestion base de données
+├── migrate_to_postgres.py    # Script de migration SQLite → PostgreSQL
+├── requirements.txt          # Dépendances Python
+├── .env                      # Configuration (tokens) - À créer
+├── .env.example              # Exemple de configuration
+├── .gitignore                # Fichiers à ignorer par Git
+├── README.md                 # Documentation principale
+├── DEPLOYMENT.md             # Guide de déploiement sur Railway
+├── MIGRATION.md              # Guide de migration PostgreSQL
+├── DATA_STORAGE.md           # Documentation stockage données
+├── Procfile.bot              # Configuration Railway
+├── runtime.txt               # Version Python pour Railway
+└── learning_streak.db        # Base SQLite (créée en local)
 ```
 
 ## 🤝 Contribution
