@@ -1,0 +1,23 @@
+[Unit]
+Description=Learning Streak Builder Discord Bot
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/learning-streak-builder
+Environment="PATH=/home/ubuntu/learning-streak-builder/venv/bin:/usr/local/bin:/usr/bin"
+ExecStart=/home/ubuntu/learning-streak-builder/venv/bin/python3 /home/ubuntu/learning-streak-builder/bot.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Sécurité
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
