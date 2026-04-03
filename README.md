@@ -20,7 +20,7 @@ Un bot Discord gamifié pour suivre et encourager ton apprentissage quotidien. A
   - 🌱 Premier Pas
   - 🔥 Guerrier Hebdomadaire (7 jours)
   - 🏆 Maître du Mois (30 jours)
-  - 🎯 Marathon (50 jours)
+  - 🎯 Marathon (50 )
   - 💯 Centurion (100 sessions)
   - 🗺️ Explorateur (10 sujets différents)
   - 🧠 Polymathe (25 sujets différents)
