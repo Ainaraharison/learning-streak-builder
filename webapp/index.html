@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Learning Streak Builder</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- ─── Auth Screen ─── -->
+    <div id="auth-screen" class="screen active">
+        <div class="auth-container">
+            <div class="auth-header">
+                <span class="logo-big">📚</span>
+                <h1>Learning Streak Builder</h1>
+                <p>Transforme ton apprentissage en aventure gamifiée</p>
+            </div>
+            <div class="auth-form">
+                <input type="text" id="auth-username" placeholder="Ton nom d'utilisateur" maxlength="30" autocomplete="off">
+                <button id="btn-login" class="btn btn-primary">Se connecter</button>
+                <button id="btn-register" class="btn btn-secondary">Créer un compte</button>
+                <p id="auth-error" class="error-msg"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── Main App ─── -->
+    <div id="app-screen" class="screen">
+        <!-- Nav -->
+        <nav class="navbar">
+            <div class="nav-left">
+                <span class="logo">📚</span>
+                <span class="brand">Learning Streak Builder</span>
+            </div>
+            <div class="nav-center">
+                <button class="nav-btn active" data-tab="dashboard">📊 Dashboard</button>
+                <button class="nav-btn" data-tab="log">📝 Logger</button>
+                <button class="nav-btn" data-tab="quiz">🎲 Quiz</button>
+                <button class="nav-btn" data-tab="challenge">🎯 Défi</button>
+                <button class="nav-btn" data-tab="leaderboard">🏆 Classement</button>
+                <button class="nav-btn" data-tab="chat">💬 Chat IA</button>
+            </div>
+            <div class="nav-right">
+                <span id="nav-user" class="nav-user"></span>
+                <button id="btn-logout" class="btn btn-sm">Déconnexion</button>
+            </div>
+        </nav>
+
+        <!-- Dashboard -->
+        <section id="tab-dashboard" class="tab-content active">
+            <div class="dashboard-grid">
+                <div class="card stat-card">
+                    <div class="stat-icon">🔥</div>
+                    <div class="stat-value" id="s-streak">0</div>
+                    <div class="stat-label">Streak actuel</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-icon">🏆</div>
+                    <div class="stat-value" id="s-best">0</div>
+                    <div class="stat-label">Meilleur streak</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-icon">💰</div>
+                    <div class="stat-value" id="s-points">0</div>
+                    <div class="stat-label">Points</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-value" id="s-level">1</div>
+                    <div class="stat-label">Niveau</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-icon">📚</div>
+                    <div class="stat-value" id="s-sessions">0</div>
+                    <div class="stat-label">Sessions</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-icon">⏱️</div>
+                    <div class="stat-value" id="s-time">0h</div>
+                    <div class="stat-label">Temps total</div>
+                </div>
+            </div>
+
+            <!-- Level progress bar -->
+            <div class="card" id="level-card">
+                <h3>📈 Progression</h3>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="level-progress"></div>
+                </div>
+                <p id="level-label"></p>
+            </div>
+
+            <!-- Top subjects -->
+            <div class="card" id="top-subjects-card">
+                <h3>🎯 Top Sujets</h3>
+                <div id="top-subjects"></div>
+            </div>
+
+            <!-- Badges -->
+            <div class="card">
+                <h3>🏅 Badges <span id="badge-counter"></span></h3>
+                <div id="badges-grid" class="badges-grid"></div>
+            </div>
+
+            <!-- History -->
+            <div class="card">
+                <h3>📜 Historique récent</h3>
+                <div id="history-list"></div>
+            </div>
+
+            <!-- Interests -->
+            <div class="card">
+                <h3>💡 Centres d'intérêt</h3>
+                <div class="interests-form">
+                    <input type="text" id="interests-input" placeholder="Ex: Python, IA, Histoire (séparés par des virgules)">
+                    <button id="btn-interests" class="btn btn-primary">Sauvegarder</button>
+                </div>
+                <div id="interests-tags" class="tags"></div>
+            </div>
+        </section>
+
+        <!-- Log Session -->
+        <section id="tab-log" class="tab-content">
+            <div class="card log-card">
+                <h2>📝 Logger une session d'apprentissage</h2>
+                <div class="form-group">
+                    <label for="log-subject">Sujet</label>
+                    <input type="text" id="log-subject" placeholder="Ex: Python, Philosophie, Maths...">
+                </div>
+                <div class="form-group">
+                    <label for="log-duration">Durée (minutes)</label>
+                    <input type="number" id="log-duration" placeholder="30" min="1" max="1440">
+                </div>
+                <div class="form-group">
+                    <label for="log-desc">Description (optionnel)</label>
+                    <textarea id="log-desc" placeholder="Qu'as-tu appris aujourd'hui ?" rows="3"></textarea>
+                </div>
+                <button id="btn-log" class="btn btn-primary btn-large">✅ Enregistrer la session</button>
+                <div id="log-result" class="result-box hidden"></div>
+            </div>
+
+            <!-- AI Suggestion -->
+            <div class="card">
+                <h3>💡 Suggestion IA personnalisée</h3>
+                <button id="btn-suggest" class="btn btn-secondary">Obtenir une suggestion</button>
+                <div id="suggest-result" class="result-box hidden"></div>
+            </div>
+        </section>
+
+        <!-- Quiz -->
+        <section id="tab-quiz" class="tab-content">
+            <div class="card">
+                <h2>🎲 Quiz Interactif IA</h2>
+                <div id="quiz-start">
+                    <div class="form-group">
+                        <label for="quiz-topic">Sujet du quiz (laisser vide = basé sur tes intérêts)</label>
+                        <input type="text" id="quiz-topic" placeholder="Ex: La photosynthèse, L'espace...">
+                    </div>
+                    <button id="btn-quiz-start" class="btn btn-primary btn-large">🚀 Lancer le Quiz</button>
+                </div>
+                <div id="quiz-loading" class="hidden">
+                    <div class="loading-spinner"></div>
+                    <p>Génération des questions par l'IA...</p>
+                </div>
+                <div id="quiz-game" class="hidden"></div>
+                <div id="quiz-result" class="hidden"></div>
+            </div>
+        </section>
+
+        <!-- Challenge -->
+        <section id="tab-challenge" class="tab-content">
+            <div class="card challenge-card">
+                <h2>🎯 Défi du Jour</h2>
+                <div id="challenge-loading" class="loading-spinner"></div>
+                <div id="challenge-content" class="hidden">
+                    <div class="challenge-title" id="challenge-title"></div>
+                    <div class="challenge-category" id="challenge-cat"></div>
+                    <div class="challenge-explanation" id="challenge-explanation"></div>
+                    <p class="challenge-cta">Relève le défi et logue ta session dans l'onglet <strong>Logger</strong> !</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Leaderboard -->
+        <section id="tab-leaderboard" class="tab-content">
+            <div class="card">
+                <h2>🏆 Classement des Apprenants</h2>
+                <div id="leaderboard-list"></div>
+            </div>
+        </section>
+
+        <!-- Chat -->
+        <section id="tab-chat" class="tab-content">
+            <div class="card chat-card">
+                <h2>💬 Chat avec l'IA</h2>
+                <div id="chat-messages" class="chat-messages">
+                    <div class="chat-msg bot">
+                        <p>👋 Salut ! Je suis ton assistant d'apprentissage. Pose-moi une question ou demande des conseils ! 📚</p>
+                    </div>
+                </div>
+                <div class="chat-input-row">
+                    <input type="text" id="chat-input" placeholder="Écris un message..." maxlength="1000">
+                    <button id="btn-chat-send" class="btn btn-primary">Envoyer</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Toast notifications -->
+        <div id="toast-container"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

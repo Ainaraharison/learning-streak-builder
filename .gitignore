@@ -27,3 +27,17 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Keys
+*.pem
+
+# Obsidian
+.obsidian/
+Ink/
+TaskNotes/
+*.canvas
+Untitled.md
+
+# Other
+*.mpp
+learning-streak-builder(Git)/
