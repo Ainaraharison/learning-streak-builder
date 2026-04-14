@@ -424,8 +424,13 @@ def set_interests():
     if not interests:
         return jsonify({"error": "Au moins un centre d'intérêt requis"}), 400
 
-    update_user_interests(session["user_id"], json.dumps(interests))
-    return jsonify({"interests": interests})
+    # Fusionne avec les intérêts existants
+    user = get_user(session["user_id"])
+    existing = json.loads(user[8]) if user and user[8] else []
+    merged = list(dict.fromkeys(existing + interests))  # déduplique en gardant l'ordre
+
+    update_user_interests(session["user_id"], json.dumps(merged))
+    return jsonify({"interests": merged})
 
 
 # ─── Challenge ────────────────────────────────────────────────────────────────

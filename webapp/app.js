@@ -51,7 +51,6 @@
         appScreen.classList.add("active");
         $("#nav-user").textContent = username;
         if (interests && interests.length) {
-            $("#interests-input").value = interests.join(", ");
             renderTags(interests);
         }
         loadDashboard();
@@ -212,6 +211,7 @@
                 body: JSON.stringify({ interests: raw }),
             });
             renderTags(d.interests);
+            $("#interests-input").value = "";
             toast("Centres d'intérêt sauvegardés ✅", "success");
         } catch (e) {
             toast(e.message, "error");
